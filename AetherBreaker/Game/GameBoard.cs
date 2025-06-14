@@ -227,8 +227,8 @@ public class GameBoard
         var connectedToCeiling = new HashSet<Bubble>();
         var queue = new Queue<Bubble>();
 
-        // Start with bubbles touching the ceiling
-        foreach (var bubble in bubbles.Where(b => b.Position.Y - b.Radius <= bubbleRadius))
+        // Start with bubbles touching the ceiling (top row)
+        foreach (var bubble in bubbles.Where(b => b.Position.Y - b.Radius <= bubbleRadius * 2))
         {
             queue.Enqueue(bubble);
             connectedToCeiling.Add(bubble);
@@ -248,7 +248,7 @@ public class GameBoard
             }
         }
 
-        // Remove bubbles not connected to ceiling
+        // Only remove bubbles that are NOT connected to ceiling
         bubbles = bubbles.Where(b => connectedToCeiling.Contains(b)).ToList();
     }
 
