@@ -7,20 +7,17 @@ namespace AetherBreaker.Windows;
 
 public class ConfigWindow : Window, IDisposable
 {
-    private Configuration Configuration;
+    private readonly Configuration configuration;
 
-    // We give this window a constant ID using ###
-    // This allows for labels being dynamic, like "{FPS Counter}fps###XYZ counter window",
-    // and the window ID will always be "###XYZ counter window" for ImGui
     public ConfigWindow(Plugin plugin) : base("A Wonderful Configuration Window###With a constant ID")
     {
-        Flags = ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoScrollbar |
-                ImGuiWindowFlags.NoScrollWithMouse;
+        this.Flags = ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
 
-        Size = new Vector2(232, 90);
-        SizeCondition = ImGuiCond.Always;
+        // Increase window size to fit the new checkbox
+        this.Size = new Vector2(232, 120);
+        this.SizeCondition = ImGuiCond.Always;
 
-        Configuration = plugin.Configuration;
+        this.configuration = plugin.Configuration;
     }
 
     public void Dispose() { }
@@ -28,32 +25,39 @@ public class ConfigWindow : Window, IDisposable
     public override void PreDraw()
     {
         // Flags must be added or removed before Draw() is being called, or they won't apply
-        if (Configuration.IsConfigWindowMovable)
+        if (this.configuration.IsConfigWindowMovable)
         {
-            Flags &= ~ImGuiWindowFlags.NoMove;
+            this.Flags &= ~ImGuiWindowFlags.NoMove;
         }
         else
         {
-            Flags |= ImGuiWindowFlags.NoMove;
+            this.Flags |= ImGuiWindowFlags.NoMove;
         }
     }
 
     public override void Draw()
     {
         // can't ref a property, so use a local copy
-        var configValue = Configuration.SomePropertyToBeSavedAndWithADefault;
+        var configValue = this.configuration.SomePropertyToBeSavedAndWithADefault;
         if (ImGui.Checkbox("Random Config Bool", ref configValue))
         {
-            Configuration.SomePropertyToBeSavedAndWithADefault = configValue;
-            // can save immediately on change, if you don't want to provide a "Save and Close" button
-            Configuration.Save();
+            this.configuration.SomePropertyToBeSavedAndWithADefault = configValue;
+            this.configuration.Save();
         }
 
-        var movable = Configuration.IsConfigWindowMovable;
+        var movable = this.configuration.IsConfigWindowMovable;
         if (ImGui.Checkbox("Movable Config Window", ref movable))
         {
-            Configuration.IsConfigWindowMovable = movable;
-            Configuration.Save();
+            this.configuration.IsConfigWindowMovable = movable;
+            this.configuration.Save();
+        }
+
+        // Add the new checkbox for locking the game window
+        var gameWindowLocked = this.configuration.IsGameWindowLocked;
+        if (ImGui.Checkbox("Lock Game Window", ref gameWindowLocked))
+        {
+            this.configuration.IsGameWindowLocked = gameWindowLocked;
+            this.configuration.Save();
         }
     }
 }

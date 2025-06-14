@@ -1,105 +1,111 @@
 using System;
 using System.Numerics;
-using Dalamud.Interface.Utility;
-using Dalamud.Interface.Utility.Raii;
+using AetherBreaker.Game;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
-using Lumina.Excel.Sheets;
 
 namespace AetherBreaker.Windows;
 
 public class MainWindow : Window, IDisposable
 {
-    private string GoatImagePath;
-    private Plugin Plugin;
+    private readonly Plugin plugin;
+    private Vector2 launcherPosition;
+    private Bubble? activeBubble;
 
-    // We give this window a hidden ID using ##
-    // So that the user will see "My Amazing Window" as window title,
-    // but for ImGui the ID is "My Amazing Window##With a hidden ID"
-    public MainWindow(Plugin plugin, string goatImagePath)
-        : base("My Amazing Window##With a hidden ID", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
+    public MainWindow(Plugin plugin) : base("AetherBreaker")
     {
-        SizeConstraints = new WindowSizeConstraints
-        {
-            MinimumSize = new Vector2(375, 330),
-            MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
-        };
-
-        GoatImagePath = goatImagePath;
-        Plugin = plugin;
+        this.Size = new Vector2(450, 600);
+        this.SizeCondition = ImGuiCond.Always;
+        this.Flags |= ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
+        this.plugin = plugin;
     }
 
     public void Dispose() { }
 
+    public override void PreDraw()
+    {
+        if (this.plugin.Configuration.IsGameWindowLocked)
+        {
+            this.Flags |= ImGuiWindowFlags.NoMove;
+        }
+        else
+        {
+            this.Flags &= ~ImGuiWindowFlags.NoMove;
+        }
+    }
+
     public override void Draw()
     {
-        // Do not use .Text() or any other formatted function like TextWrapped(), or SetTooltip().
-        // These expect formatting parameter if any part of the text contains a "%", which we can't
-        // provide through our bindings, leading to a Crash to Desktop.
-        // Replacements can be found in the ImGuiHelpers Class
-        ImGui.TextUnformatted($"The random config bool is {Plugin.Configuration.SomePropertyToBeSavedAndWithADefault}");
+        var windowPos = ImGui.GetWindowPos();
+        var windowSize = ImGui.GetWindowSize();
+        this.launcherPosition = new Vector2(windowPos.X + windowSize.X * 0.5f, windowPos.Y + windowSize.Y - 50f);
 
-        if (ImGui.Button("Show Settings"))
+        var drawList = ImGui.GetWindowDrawList();
+        var launcherRadius = 20f;
+
+        drawList.AddCircleFilled(this.launcherPosition, launcherRadius, ImGui.GetColorU32(new Vector4(0.8f, 0.8f, 0.8f, 1.0f)));
+
+        // --- Aiming & Firing Logic ---
+        if (ImGui.IsWindowHovered())
         {
-            Plugin.ToggleConfigUI();
+            var mousePos = ImGui.GetMousePos();
+            var direction = Vector2.Normalize(mousePos - this.launcherPosition);
+
+            // --- Angle Failsafe for 90-degree shots ---
+            // We ensure there is always a minimum upward angle. In screen coordinates, a negative Y is "up".
+            // If the upward velocity is too small (i.e., direction.Y is greater than -0.1f),
+            // we clamp it to a minimum upward angle. This prevents perfectly horizontal shots.
+            if (direction.Y > -0.1f)
+            {
+                direction.Y = -0.1f;
+                direction = Vector2.Normalize(direction); // Re-normalize to keep the vector's length at 1.
+            }
+
+            // Draw aiming line using the potentially corrected angle
+            var aimLineStart = this.launcherPosition + (direction * (launcherRadius + 2f));
+            var aimLineEnd = this.launcherPosition + (direction * 100f);
+            drawList.AddLine(aimLineStart, aimLineEnd, ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 1.0f, 0.5f)), 3f);
+
+            // Firing Logic
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && this.activeBubble == null)
+            {
+                var bubbleRadius = 15f;
+                var bubbleSpeed = 500f;
+                var startPos = this.launcherPosition + (direction * (launcherRadius + bubbleRadius));
+
+                // Fire the bubble using the corrected direction
+                this.activeBubble = new Bubble(
+                    startPos,
+                    direction * bubbleSpeed,
+                    bubbleRadius,
+                    ImGui.GetColorU32(new Vector4(1.0f, 0.2f, 0.2f, 1.0f))
+                );
+            }
         }
 
-        ImGui.Spacing();
-
-        // Normally a BeginChild() would have to be followed by an unconditional EndChild(),
-        // ImRaii takes care of this after the scope ends.
-        // This works for all ImGui functions that require specific handling, examples are BeginTable() or Indent().
-        using (var child = ImRaii.Child("SomeChildWithAScrollbar", Vector2.Zero, true))
+        // --- Bubble Update & Drawing Logic ---
+        if (this.activeBubble != null)
         {
-            // Check if this child is drawing
-            if (child.Success)
+            this.activeBubble.Position += this.activeBubble.Velocity * ImGui.GetIO().DeltaTime;
+
+            var bubblePos = this.activeBubble.Position;
+            var bubbleRadiusValue = this.activeBubble.Radius;
+
+            // --- Wall Collision (Ricochet) ---
+            if (bubblePos.X - bubbleRadiusValue < windowPos.X || bubblePos.X + bubbleRadiusValue > windowPos.X + windowSize.X)
             {
-                ImGui.TextUnformatted("Have a goat:");
-                var goatImage = Plugin.TextureProvider.GetFromFile(GoatImagePath).GetWrapOrDefault();
-                if (goatImage != null)
-                {
-                    using (ImRaii.PushIndent(55f))
-                    {
-                        ImGui.Image(goatImage.ImGuiHandle, new Vector2(goatImage.Width, goatImage.Height));
-                    }
-                }
-                else
-                {
-                    ImGui.TextUnformatted("Image not found.");
-                }
+                this.activeBubble.Velocity.X *= -1;
+            }
 
-                ImGuiHelpers.ScaledDummy(20.0f);
-
-                // Example for other services that Dalamud provides.
-                // ClientState provides a wrapper filled with information about the local player object and client.
-
-                var localPlayer = Plugin.ClientState.LocalPlayer;
-                if (localPlayer == null)
-                {
-                    ImGui.TextUnformatted("Our local player is currently not loaded.");
-                    return;
-                }
-
-                if (!localPlayer.ClassJob.IsValid)
-                {
-                    ImGui.TextUnformatted("Our current job is currently not valid.");
-                    return;
-                }
-
-                // ExtractText() should be the preferred method to read Lumina SeStrings,
-                // as ToString does not provide the actual text values, instead gives an encoded macro string.
-                ImGui.TextUnformatted($"Our current job is ({localPlayer.ClassJob.RowId}) \"{localPlayer.ClassJob.Value.Abbreviation.ExtractText()}\"");
-
-                // Example for quarrying Lumina directly, getting the name of our current area.
-                var territoryId = Plugin.ClientState.TerritoryType;
-                if (Plugin.DataManager.GetExcelSheet<TerritoryType>().TryGetRow(territoryId, out var territoryRow))
-                {
-                    ImGui.TextUnformatted($"We are currently in ({territoryId}) \"{territoryRow.PlaceName.Value.Name.ExtractText()}\"");
-                }
-                else
-                {
-                    ImGui.TextUnformatted("Invalid territory.");
-                }
+            // --- Top & Bottom Boundary Failsafe ---
+            // Destroy the bubble if it leaves the top OR bottom of the play area.
+            if (bubblePos.Y < windowPos.Y - bubbleRadiusValue || bubblePos.Y > windowPos.Y + windowSize.Y + bubbleRadiusValue)
+            {
+                this.activeBubble = null;
+            }
+            else
+            {
+                drawList.AddCircleFilled(this.activeBubble.Position, this.activeBubble.Radius, this.activeBubble.Color);
             }
         }
     }
