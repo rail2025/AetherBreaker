@@ -1,277 +1,185 @@
 using System;
 using System.Numerics;
-using System.Collections.Generic;
 using AetherBreaker.Game;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
 
-namespace AetherBreaker.Windows;
-
-/// <summary>
-/// The main game window that handles bubble shooting mechanics and rendering.
-/// Manages player input, bubble physics, and game state.
-/// </summary>
-public class MainWindow : Window, IDisposable
+namespace AetherBreaker.Windows
 {
-    /// <summary>
-    /// Reference to the parent plugin instance.
-    /// </summary>
-    private readonly Plugin plugin;
-
-    /// <summary>
-    /// The game board managing bubble placement.
-    /// </summary>
-    private readonly GameBoard gameBoard;
-
-    /// <summary>
-    /// Position of the bubble launcher at the bottom center.
-    /// </summary>
-    private Vector2 launcherPosition;
-
-    /// <summary>
-    /// The currently active bubble that's in motion.
-    /// </summary>
-    private Bubble? activeBubble;
-
-    /// <summary>
-    /// Random number generator for bubble colors.
-    /// </summary>
-    private readonly Random random = new Random();
-
-    /// <summary>
-    /// Initializes a new instance of the MainWindow class.
-    /// </summary>
-    /// <param name="plugin">The parent plugin instance.</param>
-    public MainWindow(Plugin plugin) : base("AetherBreaker")
+    public class MainWindow : Window, IDisposable
     {
-        this.plugin = plugin ?? throw new ArgumentNullException(nameof(plugin));
-        this.gameBoard = new GameBoard(15f); // 15px bubble radius
+        private readonly Plugin plugin;
+        private readonly GameBoard gameBoard;
+        private Vector2 launcherPosition;
+        private Bubble? activeBubble;
+        private Bubble? nextBubble;
+        private readonly Random random = new Random();
 
-        // Configure window properties
-        this.Size = new Vector2(450, 600);
-        this.SizeCondition = ImGuiCond.Always;
-        this.Flags |= ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
-    }
-
-    /// <summary>
-    /// Cleans up resources when the window is disposed.
-    /// </summary>
-    public void Dispose() { }
-
-    /// <summary>
-    /// Updates window state before drawing.
-    /// </summary>
-    public override void PreDraw()
-    {
-        if (this.plugin.Configuration.IsGameWindowLocked)
+        public MainWindow(Plugin plugin) : base("AetherBreaker")
         {
-            this.Flags |= ImGuiWindowFlags.NoMove;
+            this.plugin = plugin;
+            this.gameBoard = new GameBoard(15f);
+
+            Size = new Vector2(450, 600);
+            SizeCondition = ImGuiCond.Always;
+            Flags |= ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
+
+            nextBubble = CreateRandomBubble(Vector2.Zero);
         }
-        else
+
+        public void Dispose() { }
+
+        public override void PreDraw()
         {
-            this.Flags &= ~ImGuiWindowFlags.NoMove;
-        }
-    }
-
-    /// <summary>
-    /// Main rendering and game logic method.
-    /// </summary>
-    public override void Draw()
-    {
-        try
-        {
-            // Get window dimensions
-            var windowPos = ImGui.GetWindowPos();
-            var windowSize = ImGui.GetWindowSize();
-
-            // Position launcher at bottom center
-            launcherPosition = new Vector2(
-                windowPos.X + windowSize.X * 0.5f,
-                windowPos.Y + windowSize.Y - 50f
-            );
-
-            var drawList = ImGui.GetWindowDrawList();
-            const float launcherRadius = 20f;
-
-            // Draw launcher base
-            drawList.AddCircleFilled(
-                launcherPosition,
-                launcherRadius,
-                ImGui.GetColorU32(new Vector4(0.8f, 0.8f, 0.8f, 1.0f))
-            );
-
-            // Handle aiming when window is hovered
-            if (ImGui.IsWindowHovered())
+            if (plugin.Configuration.IsGameWindowLocked)
             {
-                HandleAiming(drawList, windowPos, launcherRadius);
+                Flags |= ImGuiWindowFlags.NoMove;
+            }
+            else
+            {
+                Flags &= ~ImGuiWindowFlags.NoMove;
+            }
+        }
+
+        public override void Draw()
+        {
+            try
+            {
+                var windowPos = ImGui.GetWindowPos();
+                var windowSize = ImGui.GetWindowSize();
+                launcherPosition = new Vector2(
+                    windowPos.X + windowSize.X * 0.5f,
+                    windowPos.Y + windowSize.Y - 50f
+                );
+
+                var drawList = ImGui.GetWindowDrawList();
+                float launcherRadius = 20f;
+
+                drawList.AddCircleFilled(
+                    launcherPosition,
+                    launcherRadius,
+                    ImGui.GetColorU32(new Vector4(0.8f, 0.8f, 0.8f, 1.0f))
+                );
+
+                if (nextBubble != null)
+                {
+                    var previewPos = new Vector2(
+                        launcherPosition.X + 40f,
+                        launcherPosition.Y - 10f
+                    );
+                    drawList.AddCircleFilled(previewPos, nextBubble.Radius, nextBubble.Color);
+                }
+
+                if (ImGui.IsWindowHovered())
+                {
+                    HandleAiming(drawList, windowPos, launcherRadius);
+                }
+
+                UpdateActiveBubble(windowPos, windowSize, drawList);
+                gameBoard.Draw(drawList);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.Error(ex, "Error during MainWindow.Draw()");
+            }
+        }
+
+        private void HandleAiming(ImDrawListPtr drawList, Vector2 windowPos, float launcherRadius)
+        {
+            var mousePos = ImGui.GetMousePos();
+            var direction = Vector2.Normalize(mousePos - launcherPosition);
+
+            if (direction.Y > -0.1f)
+            {
+                direction.Y = -0.1f;
+                direction = Vector2.Normalize(direction);
             }
 
-            // Update active bubble physics
-            UpdateActiveBubble(windowPos, windowSize, drawList);
+            var aimLineStart = launcherPosition + (direction * (launcherRadius + 2f));
+            var aimLineEnd = launcherPosition + (direction * 100f);
+            drawList.AddLine(
+                aimLineStart,
+                aimLineEnd,
+                ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 1.0f, 0.5f)),
+                3f
+            );
 
-            // Draw all stuck bubbles
-            gameBoard.Draw(drawList);
-        }
-        catch (Exception ex)
-        {
-            Plugin.Log.Error(ex, "Error during MainWindow.Draw()");
-        }
-    }
-
-    /// <summary>
-    /// Handles aiming mechanics and bubble firing.
-    /// </summary>
-    /// <param name="drawList">The ImGui draw list to render to.</param>
-    /// <param name="windowPos">The window position.</param>
-    /// <param name="launcherRadius">The radius of the launcher.</param>
-    private void HandleAiming(ImDrawListPtr drawList, Vector2 windowPos, float launcherRadius)
-    {
-        var mousePos = ImGui.GetMousePos();
-        var direction = Vector2.Normalize(mousePos - launcherPosition);
-
-        // Prevent perfectly horizontal shots
-        if (direction.Y > -0.1f)
-        {
-            direction.Y = -0.1f;
-            direction = Vector2.Normalize(direction);
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && activeBubble == null)
+            {
+                FireBubble(direction, launcherRadius);
+            }
         }
 
-        // Draw aiming guide line
-        var aimLineStart = launcherPosition + (direction * (launcherRadius + 2f));
-        var aimLineEnd = launcherPosition + (direction * 100f);
-        drawList.AddLine(
-            aimLineStart,
-            aimLineEnd,
-            ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 1.0f, 0.5f)),
-            3f
-        );
-
-        // Fire new bubble on left click
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && activeBubble == null)
+        private void FireBubble(Vector2 direction, float launcherRadius)
         {
-            FireBubble(direction, launcherRadius);
-        }
-    }
+            const float bubbleRadius = 15f;
+            const float bubbleSpeed = 500f;
+            var startPos = launcherPosition + (direction * (launcherRadius + bubbleRadius));
 
-    /// <summary>
-    /// Fires a new bubble from the launcher.
-    /// </summary>
-    /// <param name="direction">The normalized firing direction.</param>
-    /// <param name="launcherRadius">The radius of the launcher.</param>
-    private void FireBubble(Vector2 direction, float launcherRadius)
-    {
-        const float bubbleRadius = 15f;
-        const float bubbleSpeed = 500f;
-        var startPos = launcherPosition + (direction * (launcherRadius + bubbleRadius));
+            if (nextBubble != null)
+            {
+                activeBubble = nextBubble;
+                activeBubble.Position = startPos;
+                activeBubble.Velocity = direction * bubbleSpeed;
+            }
+            else
+            {
+                activeBubble = CreateRandomBubble(startPos);
+                activeBubble.Velocity = direction * bubbleSpeed;
+            }
 
-        // Define bubble colors and types
-        var bubbleTypes = new[]
-        {
-            // Type 0: Red
-            (Color: ImGui.GetColorU32(new Vector4(1.0f, 0.2f, 0.2f, 1.0f)), Type: 0),
-            
-            // Type 1: Green
-            (Color: ImGui.GetColorU32(new Vector4(0.2f, 1.0f, 0.2f, 1.0f)), Type: 1),
-            
-            // Type 2: Blue
-            (Color: ImGui.GetColorU32(new Vector4(0.2f, 0.2f, 1.0f, 1.0f)), Type: 2),
-            
-            // Type 3: Yellow
-            (Color: ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 0.2f, 1.0f)), Type: 3)
-        };
-
-        // Select random bubble type
-        var selectedType = bubbleTypes[random.Next(bubbleTypes.Length)];
-
-        activeBubble = new Bubble(
-            startPos,
-            direction * bubbleSpeed,
-            bubbleRadius,
-            selectedType.Color,
-            selectedType.Type
-        );
-    }
-
-    /// <summary>
-    /// Updates the active bubble's physics and collision state.
-    /// </summary>
-    /// <param name="windowPos">The window position.</param>
-    /// <param name="windowSize">The window size.</param>
-    /// <param name="drawList">The ImGui draw list to render to.</param>
-    private void UpdateActiveBubble(Vector2 windowPos, Vector2 windowSize, ImDrawListPtr drawList)
-    {
-        if (activeBubble == null) return;
-
-        // Update position based on velocity
-        activeBubble.Position += activeBubble.Velocity * ImGui.GetIO().DeltaTime;
-
-        // Handle wall collisions
-        HandleWallCollisions(windowPos, windowSize);
-
-        // Check for sticking collisions
-        if (gameBoard.CheckCollision(activeBubble, windowPos.Y))
-        {
-            HandleBubbleSticking(windowPos);
-            return; // Bubble is now stuck, no need for further processing
+            nextBubble = CreateRandomBubble(Vector2.Zero);
         }
 
-        // Handle out-of-bounds and rendering
-        HandleBubbleBoundsAndRendering(windowPos, windowSize, drawList);
-    }
-
-    /// <summary>
-    /// Handles bouncing off side walls.
-    /// </summary>
-    /// <param name="windowPos">The window position.</param>
-    /// <param name="windowSize">The window size.</param>
-    private void HandleWallCollisions(Vector2 windowPos, Vector2 windowSize)
-    {
-        if (activeBubble == null) return;
-
-        if (activeBubble.Position.X - activeBubble.Radius < windowPos.X ||
-            activeBubble.Position.X + activeBubble.Radius > windowPos.X + windowSize.X)
+        private Bubble CreateRandomBubble(Vector2 position)
         {
-            activeBubble.Velocity.X *= -1;
-        }
-    }
+            var bubbleTypes = new[]
+            {
+                (Color: ImGui.GetColorU32(new Vector4(1.0f, 0.2f, 0.2f, 1.0f)), Type: 0),
+                (Color: ImGui.GetColorU32(new Vector4(0.2f, 1.0f, 0.2f, 1.0f)), Type: 1),
+                (Color: ImGui.GetColorU32(new Vector4(0.2f, 0.2f, 1.0f, 1.0f)), Type: 2),
+                (Color: ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 0.2f, 1.0f)), Type: 3)
+            };
 
-    /// <summary>
-    /// Handles bubble sticking to ceiling or other bubbles.
-    /// </summary>
-    /// <param name="windowPos">The window position.</param>
-    private void HandleBubbleSticking(Vector2 windowPos)
-    {
-        if (activeBubble == null) return;
-
-        if (gameBoard.TryAddBubble(activeBubble, windowPos.Y))
-        {
-            activeBubble = null;
-        }
-        // If we can't find a valid position, let it keep moving
-    }
-
-    /// <summary>
-    /// Handles bubble boundary checks and rendering.
-    /// </summary>
-    /// <param name="windowPos">The window position.</param>
-    /// <param name="windowSize">The window size.</param>
-    /// <param name="drawList">The ImGui draw list to render to.</param>
-    private void HandleBubbleBoundsAndRendering(Vector2 windowPos, Vector2 windowSize, ImDrawListPtr drawList)
-    {
-        if (activeBubble == null) return;
-
-        // Remove if out of bounds at bottom
-        if (activeBubble.Position.Y > windowPos.Y + windowSize.Y + activeBubble.Radius)
-        {
-            activeBubble = null;
-            return;
+            var selectedType = bubbleTypes[random.Next(bubbleTypes.Length)];
+            return new Bubble(
+                position,
+                Vector2.Zero,
+                15f,
+                selectedType.Color,
+                selectedType.Type
+            );
         }
 
-        // Draw the active bubble
-        drawList.AddCircleFilled(
-            activeBubble.Position,
-            activeBubble.Radius,
-            activeBubble.Color
-        );
+        private void UpdateActiveBubble(Vector2 windowPos, Vector2 windowSize, ImDrawListPtr drawList)
+        {
+            if (activeBubble == null) return;
+
+            activeBubble.Position += activeBubble.Velocity * ImGui.GetIO().DeltaTime;
+
+            if (activeBubble.Position.X - activeBubble.Radius < windowPos.X ||
+                activeBubble.Position.X + activeBubble.Radius > windowPos.X + windowSize.X)
+            {
+                activeBubble.Velocity.X *= -1;
+            }
+
+            if (gameBoard.CheckCollision(activeBubble, windowPos.Y))
+            {
+                if (gameBoard.TryAddBubble(activeBubble, windowPos.Y))
+                {
+                    activeBubble = null;
+                }
+            }
+
+            if (activeBubble != null &&
+                activeBubble.Position.Y > windowPos.Y + windowSize.Y + activeBubble.Radius)
+            {
+                activeBubble = null;
+            }
+            else if (activeBubble != null)
+            {
+                drawList.AddCircleFilled(activeBubble.Position, activeBubble.Radius, activeBubble.Color);
+            }
+        }
     }
 }
