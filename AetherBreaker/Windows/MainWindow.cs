@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Collections.Generic;
 using AetherBreaker.Game;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
@@ -31,6 +32,11 @@ public class MainWindow : Window, IDisposable
     /// The currently active bubble that's in motion.
     /// </summary>
     private Bubble? activeBubble;
+
+    /// <summary>
+    /// Random number generator for bubble colors.
+    /// </summary>
+    private readonly Random random = new Random();
 
     /// <summary>
     /// Initializes a new instance of the MainWindow class.
@@ -158,11 +164,31 @@ public class MainWindow : Window, IDisposable
         const float bubbleSpeed = 500f;
         var startPos = launcherPosition + (direction * (launcherRadius + bubbleRadius));
 
+        // Define bubble colors and types
+        var bubbleTypes = new[]
+        {
+            // Type 0: Red
+            (Color: ImGui.GetColorU32(new Vector4(1.0f, 0.2f, 0.2f, 1.0f)), Type: 0),
+            
+            // Type 1: Green
+            (Color: ImGui.GetColorU32(new Vector4(0.2f, 1.0f, 0.2f, 1.0f)), Type: 1),
+            
+            // Type 2: Blue
+            (Color: ImGui.GetColorU32(new Vector4(0.2f, 0.2f, 1.0f, 1.0f)), Type: 2),
+            
+            // Type 3: Yellow
+            (Color: ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 0.2f, 1.0f)), Type: 3)
+        };
+
+        // Select random bubble type
+        var selectedType = bubbleTypes[random.Next(bubbleTypes.Length)];
+
         activeBubble = new Bubble(
             startPos,
             direction * bubbleSpeed,
             bubbleRadius,
-            ImGui.GetColorU32(new Vector4(1.0f, 0.2f, 0.2f, 1.0f)) // Red color
+            selectedType.Color,
+            selectedType.Type
         );
     }
 
@@ -217,14 +243,11 @@ public class MainWindow : Window, IDisposable
     {
         if (activeBubble == null) return;
 
-        if (gameBoard.CheckCollision(activeBubble, windowPos.Y))
+        if (gameBoard.TryAddBubble(activeBubble, windowPos.Y))
         {
-            if (gameBoard.TryAddBubble(activeBubble, windowPos.Y))
-            {
-                activeBubble = null;
-            }
-            // If we can't find a valid position, let it keep moving
+            activeBubble = null;
         }
+        // If we can't find a valid position, let it keep moving
     }
 
     /// <summary>
