@@ -3,6 +3,9 @@
 Shoot aether when dead.
 
 Because waiting for res in field ops sucks.
+<br>
+![game1](https://github.com/user-attachments/assets/48f831f4-f1d4-49dd-9388-6be7a8a75369)
+<br>
 
 ## Installation
 
