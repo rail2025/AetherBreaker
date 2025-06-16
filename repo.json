@@ -19,9 +19,9 @@
         ],
         "DalamudApiLevel": 12,
         "TestingDalamudApiLevel": 12,
-        "DownloadLinkInstall": "https://github.com/rail2025/AetherBreaker/releases/download/v0.1.0/latest.zip",
-        "DownloadLinkUpdate": "https://github.com/rail2025/AetherBreaker/releases/download/v0.1.0/latest.zip",
-        "DownloadLinkTesting": "https://github.com/rail2025/AetherBreaker/releases/download/v0.1.0/latest.zip",
+        "DownloadLinkInstall": "https://github.com/rail2025/AetherBreaker/releases/download/v0.1.0.0-alpha/latest.zip",
+        "DownloadLinkUpdate": "https://github.com/rail2025/AetherBreaker/releases/download/v0.1.0.0-alpha/latest.zip",
+        "DownloadLinkTesting": "https://github.com/rail2025/AetherBreaker/releases/download/v0.1.0.0-alpha/latest.zip",
         "LoadPriority": 0,
         "SupportsProfiles": true,
         "IconUrl": "https://raw.githubusercontent.com/rail2025/AetherDraw/refs/heads/master/icon.png"
