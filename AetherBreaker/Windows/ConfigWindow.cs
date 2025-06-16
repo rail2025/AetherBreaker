@@ -9,54 +9,46 @@ public class ConfigWindow : Window, IDisposable
 {
     private readonly Configuration configuration;
 
-    public ConfigWindow(Plugin plugin) : base("A Wonderful Configuration Window###With a constant ID")
+    public ConfigWindow(Plugin plugin) : base("AetherBreaker Configuration")
     {
-        this.Flags = ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
-
-        // Increase window size to fit the new checkbox
-        this.Size = new Vector2(232, 120);
-        this.SizeCondition = ImGuiCond.Always;
+        this.Size = new Vector2(300, 150);
+        this.SizeCondition = ImGuiCond.FirstUseEver;
 
         this.configuration = plugin.Configuration;
     }
 
     public void Dispose() { }
 
-    public override void PreDraw()
-    {
-        // Flags must be added or removed before Draw() is being called, or they won't apply
-        if (this.configuration.IsConfigWindowMovable)
-        {
-            this.Flags &= ~ImGuiWindowFlags.NoMove;
-        }
-        else
-        {
-            this.Flags |= ImGuiWindowFlags.NoMove;
-        }
-    }
-
     public override void Draw()
     {
-        // can't ref a property, so use a local copy
-        var configValue = this.configuration.SomePropertyToBeSavedAndWithADefault;
-        if (ImGui.Checkbox("Random Config Bool", ref configValue))
+        var lockGameWindow = this.configuration.IsGameWindowLocked;
+        if (ImGui.Checkbox("Lock Game Window Position", ref lockGameWindow))
         {
-            this.configuration.SomePropertyToBeSavedAndWithADefault = configValue;
+            this.configuration.IsGameWindowLocked = lockGameWindow;
             this.configuration.Save();
         }
 
-        var movable = this.configuration.IsConfigWindowMovable;
-        if (ImGui.Checkbox("Movable Config Window", ref movable))
+        ImGui.Separator();
+
+        var isBgmMuted = this.configuration.IsBgmMuted;
+        if (ImGui.Checkbox("Mute Music", ref isBgmMuted))
         {
-            this.configuration.IsConfigWindowMovable = movable;
+            this.configuration.IsBgmMuted = isBgmMuted;
             this.configuration.Save();
         }
 
-        // Add the new checkbox for locking the game window
-        var gameWindowLocked = this.configuration.IsGameWindowLocked;
-        if (ImGui.Checkbox("Lock Game Window", ref gameWindowLocked))
+        var isSfxMuted = this.configuration.IsSfxMuted;
+        if (ImGui.Checkbox("Mute Sound Effects", ref isSfxMuted))
         {
-            this.configuration.IsGameWindowLocked = gameWindowLocked;
+            this.configuration.IsSfxMuted = isSfxMuted;
+            this.configuration.Save();
+        }
+
+        ImGui.Separator();
+
+        if (ImGui.Button("Reset High Score"))
+        {
+            this.configuration.HighScore = 0;
             this.configuration.Save();
         }
     }

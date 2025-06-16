@@ -13,6 +13,21 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Visible>false</Visible>
     </Content>
+    <EmbeddedResource Include="Images\background 2.png" />
+    <EmbeddedResource Include="Images\background 3.png" />
+    <EmbeddedResource Include="Images\background.png" />
+    <EmbeddedResource Include="Music\AetherBreaker bg 1.mp3" />
+    <EmbeddedResource Include="Music\aetherbreaker bg 2.mp3" />
+    <EmbeddedResource Include="Music\aetherbreaker bg 3 - Healer%27s on the way.mp3" />
+    <EmbeddedResource Include="Music\Aetherbreaker bg 4 - Housing Dreams.mp3" />
+    <EmbeddedResource Include="Music\Aetherbreaker bg 5 - Party finder maze.mp3" />
+    <EmbeddedResource Include="Music\Aetherbreaker bg 6 - Glam Queen.mp3" />
+    <EmbeddedResource Include="Music\Aetherbreaker bg 7 - Metal Glam Queen.mp3" />
+    <EmbeddedResource Include="Images\icon.png" />
     <Content Include="repo.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.10" />
   </ItemGroup>
 </Project>

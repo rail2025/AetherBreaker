@@ -1,12 +1,32 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
 using AetherBreaker.Game;
+using Dalamud.Interface;
+using Dalamud.Interface.GameFonts;
+using Dalamud.Interface.Textures;
+using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace AetherBreaker.Windows;
+
+/// <summary>
+/// Represents the different states the game can be in.
+/// </summary>
+public enum GameState
+{
+    MainMenu,
+    InGame,
+    Paused,
+    StageCleared,
+    GameOver
+}
 
 /// <summary>
 /// The main window for the AetherBreaker game.
@@ -25,23 +45,33 @@ public class MainWindow : Window, IDisposable
     private readonly List<TextAnimation> activeTextAnimations = new();
 
     // Game State Fields
+    private GameState currentGameState;
     private int currentStage;
-    private bool isGameOver;
-    private bool isPaused;
-    private bool isStageCleared;
-    private bool showHelperLine;
     private int score;
     private int shotsUntilDrop;
     private float timeUntilDrop;
     private float maxTimeForStage;
 
+    /// <summary>
+    /// A list of all loaded background textures.
+    /// </summary>
+    private readonly List<IDalamudTextureWrap> backgroundImages = new();
+
     // Game Constants
+    /// <summary>
+    /// The number of stages that will use the same background before cycling.
+    /// </summary>
+    private const int StagesPerBackground = 3;
     private const float BubbleRadius = 30f;
     private const int MaxShots = 8;
     private const float BaseMaxTime = 30.0f;
     public static readonly Vector2 WindowSize = new(BubbleRadius * 2 * 9, BubbleRadius * 2 * 12);
     private const float BubbleSpeed = 1200f;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MainWindow"/> class.
+    /// </summary>
+    /// <param name="plugin">A reference to the main plugin instance.</param>
     public MainWindow(Plugin plugin) : base("AetherBreaker")
     {
         this.plugin = plugin;
@@ -49,20 +79,76 @@ public class MainWindow : Window, IDisposable
         this.Size = WindowSize;
         this.SizeCondition = ImGuiCond.Always;
         this.Flags |= ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
-        StartNewGame();
+
+        // Load all available background images from embedded resources.
+        LoadBackgroundImages();
+
+        // Start the game in the main menu.
+        this.currentGameState = GameState.MainMenu;
     }
 
+    /// <summary>
+    /// Disposes of unmanaged resources used by the window, specifically the background textures.
+    /// </summary>
+    public void Dispose()
+    {
+        foreach (var bgImage in this.backgroundImages)
+        {
+            bgImage.Dispose();
+        }
+        this.backgroundImages.Clear();
+    }
+
+    /// <summary>
+    /// Scans for and loads all background images from embedded resources.
+    /// </summary>
+    private void LoadBackgroundImages()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourcePathPrefix = "AetherBreaker.Images.";
+        var backgroundResourceNames = assembly.GetManifestResourceNames()
+            .Where(r => r.StartsWith(resourcePathPrefix + "background") && r.EndsWith(".png"))
+            .OrderBy(r => r)
+            .ToList();
+
+        foreach (var resourcePath in backgroundResourceNames)
+        {
+            try
+            {
+                using var stream = assembly.GetManifestResourceStream(resourcePath);
+                if (stream != null)
+                {
+                    using var image = Image.Load<Rgba32>(stream);
+                    var rgbaBytes = new byte[image.Width * image.Height * 4];
+                    image.CopyPixelDataTo(rgbaBytes);
+                    var texture = Plugin.TextureProvider.CreateFromRaw(RawImageSpecification.Rgba32(image.Width, image.Height), rgbaBytes);
+                    this.backgroundImages.Add(texture);
+                    Plugin.Log.Info($"Successfully loaded background: {resourcePath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.Error(ex, $"Failed to load background image: {resourcePath}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resets the entire game to its initial state for a new game.
+    /// </summary>
     private void StartNewGame()
     {
+        this.score = 0;
         this.currentStage = 1;
         SetupStage();
+        this.currentGameState = GameState.InGame;
     }
 
+    /// <summary>
+    /// Sets up the game board and state for the current stage.
+    /// </summary>
     private void SetupStage()
     {
-        this.isGameOver = false;
-        this.isPaused = false;
-        this.isStageCleared = false;
         this.shotsUntilDrop = MaxShots;
         this.maxTimeForStage = BaseMaxTime - ((this.currentStage - 1) / 2 * 0.5f);
         this.timeUntilDrop = this.maxTimeForStage;
@@ -71,46 +157,148 @@ public class MainWindow : Window, IDisposable
         this.activeTextAnimations.Clear();
         this.gameBoard.InitializeBoard(this.currentStage);
         this.nextBubble = CreateRandomBubble();
-        this.showHelperLine = this.currentStage <= 2;
     }
 
-    public void Dispose() { }
-
+    /// <summary>
+    /// Overrides the base PreDraw method to enforce window lock state before drawing.
+    /// </summary>
     public override void PreDraw()
     {
         if (this.plugin.Configuration.IsGameWindowLocked) this.Flags |= ImGuiWindowFlags.NoMove;
         else this.Flags &= ~ImGuiWindowFlags.NoMove;
     }
 
+    /// <summary>
+    /// The main drawing method for the window, called every frame.
+    /// This now acts as a router to different drawing methods based on the current game state.
+    /// </summary>
     public override void Draw()
+    {
+        // Always draw the background first.
+        DrawBackground();
+
+        // Route to the correct drawing method based on game state.
+        switch (this.currentGameState)
+        {
+            case GameState.MainMenu:
+                DrawMainMenu();
+                break;
+            case GameState.InGame:
+                DrawInGame();
+                break;
+            case GameState.Paused:
+                DrawPausedScreen();
+                break;
+            case GameState.StageCleared:
+                DrawStageClearedScreen();
+                break;
+            case GameState.GameOver:
+                DrawGameOverScreen();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Draws the currently selected background image.
+    /// </summary>
+    private void DrawBackground()
+    {
+        if (!this.backgroundImages.Any()) return;
+
+        // Use the first image for the menu, and cycle for in-game.
+        var bgIndex = 0;
+        if (this.currentGameState != GameState.MainMenu)
+        {
+            bgIndex = (this.currentStage - 1) / StagesPerBackground;
+        }
+
+        var textureToDraw = this.backgroundImages[bgIndex % this.backgroundImages.Count];
+
+        ImGui.SetCursorPos(Vector2.Zero);
+        ImGui.Image(textureToDraw.ImGuiHandle, ImGui.GetContentRegionAvail());
+    }
+
+    /// <summary>
+    /// Draws the Main Menu UI.
+    /// </summary>
+    private void DrawMainMenu()
+    {
+        var drawList = ImGui.GetWindowDrawList();
+        var windowPos = ImGui.GetWindowPos();
+        var title = "AetherBreaker";
+        var titleFontSize = ImGui.GetFontSize() * 3.5f;
+        var titleSize = ImGui.CalcTextSize(title) * 3.5f;
+        var titlePos = new Vector2(windowPos.X + (WindowSize.X - titleSize.X) * 0.5f, windowPos.Y + WindowSize.Y * 0.2f);
+        drawList.AddText(ImGui.GetFont(), titleFontSize, titlePos, 0xFFFFFFFF, title);
+
+        var buttonSize = new Vector2(140, 40);
+        var startY = WindowSize.Y * 0.5f;
+
+        // Start Game Button
+        ImGui.SetCursorPos(new Vector2((WindowSize.X - buttonSize.X) * 0.5f, startY));
+        if (ImGui.Button("Start Game", buttonSize))
+        {
+            StartNewGame();
+        }
+
+        // About Button
+        ImGui.SetCursorPos(new Vector2((WindowSize.X - buttonSize.X) * 0.5f, startY + 50));
+        if (ImGui.Button("About", buttonSize))
+        {
+            this.plugin.ToggleAboutUI();
+        }
+
+        // Settings Button (Bottom Left)
+        var settingsButtonSize = new Vector2(80, 25);
+        ImGui.SetCursorPos(new Vector2(10, WindowSize.Y - settingsButtonSize.Y - 10));
+        if (ImGui.Button("Settings", settingsButtonSize))
+        {
+            this.plugin.ToggleConfigUI();
+        }
+    }
+
+    /// <summary>
+    /// Draws all UI and handles all logic for when the game is being played.
+    /// </summary>
+    private void DrawInGame()
     {
         var windowPos = ImGui.GetWindowPos();
         this.launcherPosition = new Vector2(windowPos.X + WindowSize.X * 0.5f, windowPos.Y + WindowSize.Y - 50f);
         var drawList = ImGui.GetWindowDrawList();
 
-        if (!this.isGameOver && !this.isStageCleared && !this.isPaused && !ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows))
-            this.isPaused = true;
+        if (!ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows))
+        {
+            this.currentGameState = GameState.Paused;
+        }
 
         this.gameBoard.Draw(drawList, windowPos);
 
-        if (this.isGameOver) HandleGameOver(windowPos, drawList);
-        else if (this.isStageCleared) HandleStageCleared(windowPos, drawList);
-        else if (this.isPaused) HandlePaused(windowPos, drawList);
-        else UpdateGameLogic(windowPos, drawList);
+        UpdateGameLogic(windowPos, drawList);
 
         UpdateAndDrawBubbleAnimations(drawList, windowPos);
         UpdateAndDrawTextAnimations(drawList, windowPos);
         DrawGameUI(windowPos);
     }
 
+    /// <summary>
+    /// Handles the main game logic updates when the game is active.
+    /// </summary>
+    /// <param name="windowPos">The top-left position of the game window.</param>
+    /// <param name="drawList">The ImGui draw list for rendering.</param>
     private void UpdateGameLogic(Vector2 windowPos, ImDrawListPtr drawList)
     {
         UpdateTimers();
         UpdateActiveBubble(windowPos, drawList);
-        DrawLauncherAndAiming(drawList, windowPos); // Draw launcher last to cover bubble tail
-        if (this.gameBoard.IsGameOver()) this.isGameOver = true;
+        DrawLauncherAndAiming(drawList, windowPos);
+        if (this.gameBoard.IsGameOver())
+        {
+            this.currentGameState = GameState.GameOver;
+        }
     }
 
+    /// <summary>
+    /// Updates the timers for the ceiling advance mechanic.
+    /// </summary>
     private void UpdateTimers()
     {
         this.timeUntilDrop -= ImGui.GetIO().DeltaTime;
@@ -125,34 +313,38 @@ public class MainWindow : Window, IDisposable
         }
     }
 
+    /// <summary>
+    /// Draws the static in-game UI elements like score, stage, and buttons.
+    /// </summary>
+    /// <param name="windowPos">The top-left position of the game window.</param>
     private void DrawGameUI(Vector2 windowPos)
     {
         var drawList = ImGui.GetWindowDrawList();
+        var baseFontSize = ImGui.GetFontSize();
+
+        // Display High Score (Top Left)
+        var highScoreText = $"High Score: {this.plugin.Configuration.HighScore}";
+        var highScorePos = new Vector2(windowPos.X + 15, windowPos.Y + 15);
+        drawList.AddText(ImGui.GetFont(), baseFontSize * 1.2f, highScorePos, ImGui.GetColorU32(new Vector4(1, 0.9f, 0.3f, 1)), highScoreText);
+
+        // Display Current Score (Below High Score)
         var scoreText = $"Score: {this.score}";
-        var stageText = $"Stage: {this.currentStage}";
-        var scorePos = new Vector2(windowPos.X + 15, windowPos.Y + WindowSize.Y - 60f);
-        drawList.AddText(ImGui.GetFont(), ImGui.GetFontSize() * 1.5f, scorePos, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)), scoreText);
         var scoreTextSize = ImGui.CalcTextSize(scoreText) * 1.5f;
-        ImGui.SetCursorScreenPos(new Vector2(scorePos.X, scorePos.Y + scoreTextSize.Y));
+        var scorePos = new Vector2(windowPos.X + 15, highScorePos.Y + scoreTextSize.Y * 0.8f);
+        drawList.AddText(ImGui.GetFont(), baseFontSize * 1.5f, scorePos, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)), scoreText);
+
+        // Display Stage (Below Current Score)
+        var stageText = $"Stage: {this.currentStage}";
+        var stageTextSize = ImGui.CalcTextSize(stageText) * 1.5f;
+        var stagePos = new Vector2(windowPos.X + 15, scorePos.Y + stageTextSize.Y);
+        ImGui.SetCursorScreenPos(stagePos);
         ImGui.Text(stageText);
 
-        if (!isGameOver && !isStageCleared && !isPaused)
-        {
-            var pauseButtonSize = new Vector2(50, 25);
-            var pauseButtonPos = new Vector2(this.launcherPosition.X + 80, this.launcherPosition.Y - pauseButtonSize.Y / 2);
-            ImGui.SetCursorScreenPos(pauseButtonPos);
-            if (ImGui.Button("Pause", pauseButtonSize)) this.isPaused = true;
-
-            var debugButtonSize = ImGui.CalcTextSize("Win Stage") + new Vector2(10, 5);
-            var debugButtonPos = new Vector2(this.launcherPosition.X - 80 - debugButtonSize.X, this.launcherPosition.Y - debugButtonSize.Y / 2);
-            ImGui.SetCursorScreenPos(debugButtonPos);
-            if (ImGui.Button("Win Stage", debugButtonSize))
-            {
-                this.gameBoard.ClearAllColoredBubbles();
-                this.isStageCleared = true;
-                this.score += 1000 * this.currentStage;
-            }
-        }
+        // Pause Button
+        var pauseButtonSize = new Vector2(50, 25);
+        var pauseButtonPos = new Vector2(this.launcherPosition.X + 80, this.launcherPosition.Y - pauseButtonSize.Y / 2);
+        ImGui.SetCursorScreenPos(pauseButtonPos);
+        if (ImGui.Button("Pause", pauseButtonSize)) this.currentGameState = GameState.Paused;
 
         var shotsText = $"Shots: {this.shotsUntilDrop}";
         var timeText = $"Time: {this.timeUntilDrop:F1}s";
@@ -164,24 +356,46 @@ public class MainWindow : Window, IDisposable
         ImGui.Text(timeText);
     }
 
-    private void HandleGameOver(Vector2 windowPos, ImDrawListPtr drawList)
+    /// <summary>
+    /// Renders the "Game Over" screen.
+    /// </summary>
+    private void DrawGameOverScreen()
     {
+        // Check for and save a new high score
+        if (this.score > this.plugin.Configuration.HighScore)
+        {
+            this.plugin.Configuration.HighScore = this.score;
+            this.plugin.Configuration.Save();
+        }
+
+        var windowPos = ImGui.GetWindowPos();
+        var drawList = ImGui.GetWindowDrawList();
         var text = "GAME OVER";
         var textSize = ImGui.CalcTextSize(text) * 2;
         var textPos = new Vector2(windowPos.X + (WindowSize.X - textSize.X) * 0.5f, windowPos.Y + (WindowSize.Y - textSize.Y) * 0.5f);
         drawList.AddText(ImGui.GetFont(), ImGui.GetFontSize() * 2, textPos, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)), text);
-        var buttonSize = new Vector2(100, 30);
+
+        var buttonSize = new Vector2(120, 30);
         var buttonPos = new Vector2(windowPos.X + (WindowSize.X - buttonSize.X) * 0.5f, textPos.Y + textSize.Y + 20);
         ImGui.SetCursorScreenPos(buttonPos);
-        if (ImGui.Button("Restart", buttonSize)) StartNewGame();
+        if (ImGui.Button("Main Menu", buttonSize))
+        {
+            this.currentGameState = GameState.MainMenu;
+        }
     }
 
-    private void HandleStageCleared(Vector2 windowPos, ImDrawListPtr drawList)
+    /// <summary>
+    /// Renders the "Stage Cleared" screen.
+    /// </summary>
+    private void DrawStageClearedScreen()
     {
+        var windowPos = ImGui.GetWindowPos();
+        var drawList = ImGui.GetWindowDrawList();
         var text = "STAGE CLEARED!";
         var textSize = ImGui.CalcTextSize(text) * 2;
         var textPos = new Vector2(windowPos.X + (WindowSize.X - textSize.X) * 0.5f, windowPos.Y + (WindowSize.Y - textSize.Y) * 0.5f);
         drawList.AddText(ImGui.GetFont(), ImGui.GetFontSize() * 2, textPos, ImGui.GetColorU32(new Vector4(1, 1, 0, 1)), text);
+
         var buttonText = $"Continue to Stage {this.currentStage + 1}";
         var buttonSize = ImGui.CalcTextSize(buttonText) + new Vector2(20, 10);
         var buttonPos = new Vector2(windowPos.X + (WindowSize.X - buttonSize.X) * 0.5f, textPos.Y + textSize.Y + 20);
@@ -190,30 +404,73 @@ public class MainWindow : Window, IDisposable
         {
             this.currentStage++;
             SetupStage();
+            this.currentGameState = GameState.InGame;
         }
     }
 
-    private void HandlePaused(Vector2 windowPos, ImDrawListPtr drawList)
+    /// <summary>
+    /// Renders the "Paused" screen.
+    /// </summary>
+    private void DrawPausedScreen()
     {
+        // We still want to draw the game board underneath the pause overlay
+        var windowPos = ImGui.GetWindowPos();
+        var drawList = ImGui.GetWindowDrawList();
+        this.gameBoard.Draw(drawList, windowPos);
+        DrawGameUI(windowPos);
+
         var text = "PAUSED";
         var textSize = ImGui.CalcTextSize(text) * 2;
         var textPos = new Vector2(windowPos.X + (WindowSize.X - textSize.X) * 0.5f, windowPos.Y + (WindowSize.Y - textSize.Y) * 0.5f);
         drawList.AddText(ImGui.GetFont(), ImGui.GetFontSize() * 2, textPos, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)), text);
-        var buttonSize = new Vector2(80, 30);
-        var restartPos = new Vector2(windowPos.X + (WindowSize.X / 2) - buttonSize.X - 10, textPos.Y + textSize.Y + 20);
-        var resumePos = new Vector2(windowPos.X + (WindowSize.X / 2) + 10, textPos.Y + textSize.Y + 20);
-        ImGui.SetCursorScreenPos(restartPos);
-        if (ImGui.Button("Restart", buttonSize)) StartNewGame();
+
+        var buttonSize = new Vector2(100, 30);
+        var resumePos = new Vector2(windowPos.X + (WindowSize.X / 2) - buttonSize.X - 10, textPos.Y + textSize.Y + 20);
+        var menuPos = new Vector2(windowPos.X + (WindowSize.X / 2) + 10, textPos.Y + textSize.Y + 20);
         ImGui.SetCursorScreenPos(resumePos);
-        if (ImGui.Button("Resume", buttonSize)) this.isPaused = false;
+        if (ImGui.Button("Resume", buttonSize))
+        {
+            this.currentGameState = GameState.InGame;
+        }
+        ImGui.SetCursorScreenPos(menuPos);
+        if (ImGui.Button("Main Menu", buttonSize))
+        {
+            this.currentGameState = GameState.MainMenu;
+        }
     }
 
+    /// <summary>
+    /// Fires a bubble from the launcher.
+    /// </summary>
+    /// <param name="direction">The normalized direction vector for the shot.</param>
+    /// <param name="windowPos">The top-left position of the game window.</param>
+    private void FireBubble(Vector2 direction, Vector2 windowPos)
+    {
+        if (this.nextBubble == null) return;
+        this.activeBubble = this.nextBubble;
+        this.activeBubble.Position = this.launcherPosition - windowPos;
+        this.activeBubble.Velocity = direction * BubbleSpeed;
+        this.nextBubble = CreateRandomBubble();
+        this.shotsUntilDrop--;
+        this.timeUntilDrop = this.maxTimeForStage;
+
+        if (this.shotsUntilDrop <= 0)
+        {
+            var droppedBubbles = this.gameBoard.AdvanceCeiling();
+            if (droppedBubbles.Any())
+                this.activeBubbleAnimations.Add(new BubbleAnimation(droppedBubbles, BubbleAnimationType.Drop, 1.5f));
+            this.shotsUntilDrop = MaxShots;
+        }
+    }
+
+    // Unchanged methods from here down
     private void DrawLauncherAndAiming(ImDrawListPtr drawList, Vector2 windowPos)
     {
         var launcherBaseRadius = BubbleRadius * 1.2f;
         drawList.AddCircleFilled(this.launcherPosition, launcherBaseRadius, ImGui.GetColorU32(new Vector4(0.8f, 0.8f, 0.8f, 1.0f)));
         if (this.nextBubble != null)
             drawList.AddCircleFilled(this.launcherPosition, this.nextBubble.Radius, this.nextBubble.Color);
+
         if (ImGui.IsWindowHovered())
         {
             var mousePos = ImGui.GetMousePos();
@@ -226,7 +483,7 @@ public class MainWindow : Window, IDisposable
                     direction = Vector2.Normalize(direction);
                 }
 
-                if (this.showHelperLine)
+                if (this.currentStage <= 2)
                     DrawHelperLine(drawList, direction, windowPos);
                 else
                     drawList.AddLine(this.launcherPosition, this.launcherPosition + direction * 150f, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.5f)), 3f);
@@ -247,24 +504,6 @@ public class MainWindow : Window, IDisposable
         }
     }
 
-    private void FireBubble(Vector2 direction, Vector2 windowPos)
-    {
-        if (this.nextBubble == null) return;
-        this.activeBubble = this.nextBubble;
-        this.activeBubble.Position = this.launcherPosition - windowPos;
-        this.activeBubble.Velocity = direction * BubbleSpeed;
-        this.nextBubble = CreateRandomBubble();
-        this.shotsUntilDrop--;
-        this.timeUntilDrop = this.maxTimeForStage;
-        if (this.shotsUntilDrop <= 0)
-        {
-            var droppedBubbles = this.gameBoard.AdvanceCeiling();
-            if (droppedBubbles.Any())
-                this.activeBubbleAnimations.Add(new BubbleAnimation(droppedBubbles, BubbleAnimationType.Drop, 1.5f));
-            this.shotsUntilDrop = MaxShots;
-        }
-    }
-
     private Bubble CreateRandomBubble()
     {
         var bubbleTypes = this.gameBoard.GetAvailableBubbleTypesOnBoard();
@@ -276,10 +515,7 @@ public class MainWindow : Window, IDisposable
     {
         if (this.activeBubble == null) return;
 
-        // Move the bubble one step.
         this.activeBubble.Position += this.activeBubble.Velocity * ImGui.GetIO().DeltaTime;
-
-        // Check for wall collisions and correct the position to prevent getting stuck.
         if (this.activeBubble.Position.X - BubbleRadius < 0)
         {
             this.activeBubble.Velocity.X *= -1;
@@ -291,18 +527,16 @@ public class MainWindow : Window, IDisposable
             this.activeBubble.Position.X = WindowSize.X - BubbleRadius;
         }
 
-        // Check for collision with the static bubbles on the board.
         if (this.gameBoard.CheckCollision(this.activeBubble))
         {
             var clearResult = this.gameBoard.AddBubble(this.activeBubble);
-            this.activeBubble = null; // Bubble is no longer active
+            this.activeBubble = null;
+
             if (clearResult.TotalScore > 0)
             {
                 this.score += clearResult.TotalScore;
 
-                if (clearResult.PoppedBubbles.Any(b => b.BubbleType == -2) || clearResult.DroppedBubbles.Any(b => b.BubbleType == -2))
-                    this.showHelperLine = true;
-
+               
                 if (clearResult.PoppedBubbles.Any())
                     this.activeBubbleAnimations.Add(new BubbleAnimation(clearResult.PoppedBubbles, BubbleAnimationType.Pop, 0.2f));
                 if (clearResult.DroppedBubbles.Any())
@@ -320,14 +554,13 @@ public class MainWindow : Window, IDisposable
 
                 if (this.gameBoard.AreAllColoredBubblesCleared())
                 {
-                    this.isStageCleared = true;
                     this.score += 1000 * this.currentStage;
+                    this.currentGameState = GameState.StageCleared;
                 }
             }
             return;
         }
 
-        // If no collision, draw the active bubble at its new position.
         drawList.AddCircleFilled(windowPos + this.activeBubble.Position, this.activeBubble.Radius, this.activeBubble.Color);
     }
 
