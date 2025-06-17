@@ -10,6 +10,7 @@ public class ClearResult
 {
     public List<Bubble> PoppedBubbles { get; } = new();
     public List<Bubble> DroppedBubbles { get; } = new();
+    public bool HelperLineActivated { get; set; }
     public int BaseScore { get; private set; }
     public int BonusScore { get; private set; }
     public int ComboMultiplier { get; private set; } = 1;

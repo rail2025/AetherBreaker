@@ -1,4 +1,5 @@
 using System.Numerics;
+using ImGuiNET;
 
 namespace AetherBreaker.Game;
 
@@ -24,5 +25,15 @@ public class Bubble
         this.Radius = radius;
         this.Color = color;
         this.BubbleType = bubbleType;
+    }
+
+    /// <summary>
+    /// Draws the bubble on the screen.
+    /// </summary>
+    /// <param name="drawList">The ImGui draw list to render to.</param>
+    /// <param name="windowPos">The top-left position of the game window.</param>
+    public void Draw(ImDrawListPtr drawList, Vector2 windowPos)
+    {
+        drawList.AddCircleFilled(windowPos + this.Position, this.Radius, this.Color);
     }
 }

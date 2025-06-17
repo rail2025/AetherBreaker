@@ -2,17 +2,22 @@ using System;
 using System.Numerics;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
+using AetherBreaker.Audio;
+
 
 namespace AetherBreaker.Windows;
 
 public class ConfigWindow : Window, IDisposable
 {
     private readonly Configuration configuration;
+    private readonly AudioManager audioManager;
 
-    public ConfigWindow(Plugin plugin) : base("AetherBreaker Configuration")
+    public ConfigWindow(Plugin plugin, AudioManager audioManager) : base("AetherBreaker Configuration")
     {
         this.Size = new Vector2(300, 150);
         this.SizeCondition = ImGuiCond.FirstUseEver;
+        this.configuration = plugin.Configuration;
+        this.audioManager = audioManager;
 
         this.configuration = plugin.Configuration;
     }
@@ -35,6 +40,7 @@ public class ConfigWindow : Window, IDisposable
         {
             this.configuration.IsBgmMuted = isBgmMuted;
             this.configuration.Save();
+            this.audioManager.UpdateBgmState();
         }
 
         var isSfxMuted = this.configuration.IsSfxMuted;

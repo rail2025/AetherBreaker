@@ -18,8 +18,8 @@ public class Configuration : IPluginConfiguration
     // Audio Settings
     public bool IsBgmMuted { get; set; } = false;
     public bool IsSfxMuted { get; set; } = false;
+    public float MusicVolume { get; set; } = 0.5f; // New volume setting
 
-    // The below exist just to make saving less cumbersome
     [NonSerialized]
     private IDalamudPluginInterface? pluginInterface;
 

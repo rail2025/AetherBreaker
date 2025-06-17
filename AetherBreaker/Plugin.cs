@@ -5,7 +5,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using AetherBreaker.Windows;
 using Dalamud.Interface.Textures;
-
+using AetherBreaker.Audio;
 namespace AetherBreaker;
 
 public sealed class Plugin : IDalamudPlugin
@@ -20,6 +20,7 @@ public sealed class Plugin : IDalamudPlugin
     private const string CommandName = "/abreaker";
 
     public Configuration Configuration { get; init; }
+    public AudioManager AudioManager { get; init; }
     public readonly WindowSystem WindowSystem = new("AetherBreaker");
     private ConfigWindow ConfigWindow { get; init; }
     private MainWindow MainWindow { get; init; }
@@ -28,9 +29,12 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Configuration.Initialize(PluginInterface);
+        AudioManager = new AudioManager(this.Configuration);
 
-        ConfigWindow = new ConfigWindow(this);
-        MainWindow = new MainWindow(this);
+        ConfigWindow = new ConfigWindow(this, this.AudioManager);
+        MainWindow = new MainWindow(this, this.AudioManager);
+
+
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
@@ -52,6 +56,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         WindowSystem.RemoveAllWindows();
         ConfigWindow.Dispose();
+        this.AudioManager.Dispose();
         MainWindow.Dispose();
         CommandManager.RemoveHandler(CommandName);
     }
