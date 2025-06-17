@@ -5,14 +5,25 @@ Shoot aether when dead.
 
 Because waiting for res in field ops sucks.
 <br>
-![game1](https://github.com/user-attachments/assets/48f831f4-f1d4-49dd-9388-6be7a8a75369)
+![main menu](https://github.com/user-attachments/assets/1b23f707-b464-4b82-bc25-006dbb4a2eae)
+
+<br>
+
+![game board 1](https://github.com/user-attachments/assets/4b8c20a1-43f7-4d02-b7cc-d33675ad4de6)
+
+<br>
+
+
+<br>
+
+<br>
 <br>
 
 ## Installation
 
 https://raw.githubusercontent.com/rail2025/AetherBreaker/refs/heads/master/repo.json
 ## How To Use
-
+/abreaker, click to fire. slider to music volume, or mute. settings to turn off sfx. closing window ends game and progress. do people want a continue option?
 ### Die
 
 
@@ -34,5 +45,5 @@ click to fire.
 
 ### Scoring
 
-tbd
+does it really matter?
 
