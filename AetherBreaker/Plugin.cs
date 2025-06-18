@@ -4,8 +4,9 @@ using Dalamud.Plugin;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using AetherBreaker.Windows;
-using Dalamud.Interface.Textures;
 using AetherBreaker.Audio;
+using Dalamud.Game.ClientState.Conditions;
+
 namespace AetherBreaker;
 
 public sealed class Plugin : IDalamudPlugin
@@ -16,6 +17,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
+    [PluginService] internal static ICondition Condition { get; private set; } = null!;
 
     private const string CommandName = "/abreaker";
 
@@ -25,6 +27,9 @@ public sealed class Plugin : IDalamudPlugin
     private ConfigWindow ConfigWindow { get; init; }
     private MainWindow MainWindow { get; init; }
     private AboutWindow AboutWindow { get; init; }
+
+    private bool wasDead = false;
+
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
@@ -33,8 +38,6 @@ public sealed class Plugin : IDalamudPlugin
 
         ConfigWindow = new ConfigWindow(this, this.AudioManager);
         MainWindow = new MainWindow(this, this.AudioManager);
-
-
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
@@ -46,6 +49,9 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Opens the AetherBreaker game window."
         });
+
+        ClientState.TerritoryChanged += OnTerritoryChanged;
+        Condition.ConditionChange += OnConditionChanged;
 
         PluginInterface.UiBuilder.Draw += DrawUI;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUI;
@@ -59,6 +65,8 @@ public sealed class Plugin : IDalamudPlugin
         this.AudioManager.Dispose();
         MainWindow.Dispose();
         CommandManager.RemoveHandler(CommandName);
+        ClientState.TerritoryChanged -= OnTerritoryChanged;
+        Condition.ConditionChange -= OnConditionChanged;
     }
 
     private void OnCommand(string command, string args)
@@ -72,4 +80,39 @@ public sealed class Plugin : IDalamudPlugin
     public void ToggleMainUI() => MainWindow.Toggle();
     public void ToggleAboutUI() => AboutWindow.Toggle();
 
+    private void OnTerritoryChanged(ushort territoryTypeId)
+    {
+        if (MainWindow.IsOpen)
+        {
+            MainWindow.IsOpen = false;
+        }
+    }
+
+    private void OnConditionChanged(ConditionFlag flag, bool value)
+    {
+        if (flag == ConditionFlag.InCombat && !value)
+        {
+            bool isDead = ClientState.LocalPlayer?.CurrentHp == 0;
+            if (isDead && !wasDead && Configuration.OpenOnDeath)
+            {
+                MainWindow.IsOpen = true;
+            }
+            wasDead = isDead;
+        }
+
+        if (flag == ConditionFlag.InDutyQueue && value && Configuration.OpenInQueue)
+        {
+            MainWindow.IsOpen = true;
+        }
+
+        if (flag == ConditionFlag.UsingPartyFinder && value && Configuration.OpenInPartyFinder)
+        {
+            MainWindow.IsOpen = true;
+        }
+
+        if (flag == ConditionFlag.Crafting && value && Configuration.OpenDuringCrafting)
+        {
+            MainWindow.IsOpen = true;
+        }
+    }
 }

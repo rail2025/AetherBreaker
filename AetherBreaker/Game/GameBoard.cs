@@ -3,19 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using AetherBreaker.Windows;
+using Dalamud.Interface;
+using Dalamud.Interface.Utility;
 using ImGuiNET;
 
 namespace AetherBreaker.Game;
 
-/// <summary>
-/// Manages the hexagonal grid of bubbles, including collision, snapping, and game logic.
-/// The layout is now dynamically calculated based on the provided bubble radius.
-/// </summary>
 public class GameBoard
 {
-    /// <summary>
-    /// Gets the list of all bubbles currently on the game board.
-    /// </summary>
     public List<Bubble> Bubbles { get; private set; } = new();
 
     private readonly float bubbleRadius;
@@ -37,23 +32,18 @@ public class GameBoard
     public const int MirrorType = -6;
     public const int ChestType = -7;
 
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="GameBoard"/> class.
-    /// </summary>
-    /// <param name="radius">The radius to use for all bubbles on this board.</param>
     public GameBoard(float radius)
     {
         this.bubbleRadius = radius;
         this.gridSpacing = this.bubbleRadius * 2;
         this.CeilingBubble = new Bubble(Vector2.Zero, Vector2.Zero, 0, 0, -99);
 
-        if (this.bubbleRadius > 35f) this.gameBoardWidthInBubbles = 7;
-        else if (this.bubbleRadius < 25f) this.gameBoardWidthInBubbles = 11;
+        if (this.bubbleRadius > 35f * ImGuiHelpers.GlobalScale) this.gameBoardWidthInBubbles = 7;
+        else if (this.bubbleRadius < 25f * ImGuiHelpers.GlobalScale) this.gameBoardWidthInBubbles = 11;
         else this.gameBoardWidthInBubbles = 8;
 
         this.boardWidth = (this.gameBoardWidthInBubbles * this.gridSpacing) - this.bubbleRadius;
-        this.gameOverLineY = 30f * 2 * 10;
+        this.gameOverLineY = MainWindow.ScaledWindowSize.Y - (120f * ImGuiHelpers.GlobalScale);
 
         this.allBubbleColorTypes = new[]
         {
@@ -64,20 +54,21 @@ public class GameBoard
         };
     }
 
-    /// <summary>
-    /// Generates the initial layout of bubbles for a given stage.
-    /// </summary>
-    /// <param name="stage">The current stage number, used to determine difficulty.</param>
     public void InitializeBoard(int stage)
     {
         this.Bubbles.Clear();
         this.ceilingY = this.bubbleRadius;
         var tempBubbles = new List<Bubble>();
-        var padding = (MainWindow.WindowSize.X - this.boardWidth) / 2f;
+        var padding = (MainWindow.ScaledWindowSize.X - this.boardWidth) / 2f;
 
         var numRows = 5;
-        if (this.bubbleRadius > 35f) numRows = 4;
-        else if (this.bubbleRadius < 25f) numRows = 6;
+        if (this.bubbleRadius > 35f * ImGuiHelpers.GlobalScale) numRows = 4;
+        else if (this.bubbleRadius < 25f * ImGuiHelpers.GlobalScale) numRows = 6;
+
+        if (stage >= 20)
+        {
+            numRows += 2;
+        }
 
         for (var row = 0; row < numRows; row++)
         {
@@ -191,9 +182,10 @@ public class GameBoard
 
     public void DrawBoardChrome(ImDrawListPtr drawList, Vector2 windowPos)
     {
-        var padding = (MainWindow.WindowSize.X - this.boardWidth) / 2f;
-        drawList.AddLine(windowPos + new Vector2(padding - this.bubbleRadius, this.ceilingY - this.bubbleRadius), windowPos + new Vector2(this.boardWidth + padding + this.bubbleRadius, this.ceilingY - this.bubbleRadius), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.5f)), 1f);
-        drawList.AddLine(windowPos + new Vector2(0, this.gameOverLineY), windowPos + new Vector2(MainWindow.WindowSize.X, this.gameOverLineY), ImGui.GetColorU32(new Vector4(1, 0, 0, 0.5f)), 2f);
+        var padding = (MainWindow.ScaledWindowSize.X - this.boardWidth) / 2f;
+        var ceilingLineY = windowPos.Y + this.ceilingY - this.bubbleRadius;
+        drawList.AddLine(new Vector2(windowPos.X + padding - this.bubbleRadius, ceilingLineY), new Vector2(windowPos.X + this.boardWidth + padding + this.bubbleRadius, ceilingLineY), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.5f)), 1f * ImGuiHelpers.GlobalScale);
+        drawList.AddLine(windowPos + new Vector2(0, this.gameOverLineY), windowPos + new Vector2(MainWindow.ScaledWindowSize.X, this.gameOverLineY), ImGui.GetColorU32(new Vector4(1, 0, 0, 0.5f)), 2f * ImGuiHelpers.GlobalScale);
     }
 
     private Vector2 SnapToGridOnCollision(Vector2 landingPosition, Bubble? collidedWith)
@@ -204,7 +196,7 @@ public class GameBoard
 
         if (closestBubble == null || closestBubble == this.CeilingBubble)
         {
-            var padding = (MainWindow.WindowSize.X - this.boardWidth) / 2f;
+            var padding = (MainWindow.ScaledWindowSize.X - this.boardWidth) / 2f;
             var x = (float)Math.Round((landingPosition.X - padding) / this.gridSpacing) * this.gridSpacing + padding;
             return new Vector2(x, this.ceilingY);
         }
@@ -429,5 +421,36 @@ public class GameBoard
 
         mirrorBubble.BubbleType = colorSourceBubble.BubbleType;
         mirrorBubble.Color = colorSourceBubble.Color;
+    }
+
+    public (uint Color, int Type) GetBubbleDetails(int bubbleType)
+    {
+        foreach (var details in this.allBubbleColorTypes)
+        {
+            if (details.Type == bubbleType)
+            {
+                return details;
+            }
+        }
+
+        switch (bubbleType)
+        {
+            case PowerUpType:
+                return (ImGui.GetColorU32(new Vector4(0.5f, 0.2f, 1.0f, 1.0f)), PowerUpType);
+            case BombType:
+                return (ImGui.GetColorU32(new Vector4(0.9f, 0.4f, 0.1f, 1.0f)), BombType);
+            case StarType:
+                return (ImGui.GetColorU32(new Vector4(1f, 0.85f, 0.2f, 1f)), StarType);
+            case PaintType:
+                return (ImGui.GetColorU32(new Vector4(0.9f, 0.5f, 1f, 1f)), PaintType);
+            case MirrorType:
+                return (ImGui.GetColorU32(new Vector4(0.8f, 0.9f, 0.95f, 1f)), MirrorType);
+            case ChestType:
+                return (ImGui.GetColorU32(new Vector4(0.6f, 0.4f, 0.2f, 1.0f)), ChestType);
+            case -1: // Black Bubble
+                return (ImGui.GetColorU32(new Vector4(0.1f, 0.1f, 0.1f, 1.0f)), -1);
+            default:
+                return (this.allBubbleColorTypes[0].Color, this.allBubbleColorTypes[0].Type);
+        }
     }
 }

@@ -14,12 +14,10 @@ public class ConfigWindow : Window, IDisposable
 
     public ConfigWindow(Plugin plugin, AudioManager audioManager) : base("AetherBreaker Configuration")
     {
-        this.Size = new Vector2(300, 150);
+        this.Size = new Vector2(300, 250);
         this.SizeCondition = ImGuiCond.FirstUseEver;
         this.configuration = plugin.Configuration;
         this.audioManager = audioManager;
-
-        this.configuration = plugin.Configuration;
     }
 
     public void Dispose() { }
@@ -47,6 +45,37 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox("Mute Sound Effects", ref isSfxMuted))
         {
             this.configuration.IsSfxMuted = isSfxMuted;
+            this.configuration.Save();
+        }
+
+        ImGui.Separator();
+        ImGui.Text("Advanced Triggers");
+
+        var openOnDeath = this.configuration.OpenOnDeath;
+        if (ImGui.Checkbox("Open on Death", ref openOnDeath))
+        {
+            this.configuration.OpenOnDeath = openOnDeath;
+            this.configuration.Save();
+        }
+
+        var openInQueue = this.configuration.OpenInQueue;
+        if (ImGui.Checkbox("Open in Duty Queue", ref openInQueue))
+        {
+            this.configuration.OpenInQueue = openInQueue;
+            this.configuration.Save();
+        }
+
+        var openInPartyFinder = this.configuration.OpenInPartyFinder;
+        if (ImGui.Checkbox("Open in Party Finder Queue", ref openInPartyFinder))
+        {
+            this.configuration.OpenInPartyFinder = openInPartyFinder;
+            this.configuration.Save();
+        }
+
+        var openDuringCrafting = this.configuration.OpenDuringCrafting;
+        if (ImGui.Checkbox("Open during long craft", ref openDuringCrafting))
+        {
+            this.configuration.OpenDuringCrafting = openDuringCrafting;
             this.configuration.Save();
         }
 

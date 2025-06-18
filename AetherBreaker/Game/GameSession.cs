@@ -4,13 +4,12 @@ using System.Linq;
 using System.Numerics;
 using AetherBreaker.Audio;
 using AetherBreaker.Windows;
+using Dalamud.Interface;
+using Dalamud.Interface.Utility;
 using ImGuiNET;
 
 namespace AetherBreaker.Game;
 
-/// <summary>
-/// Manages the state and logic for a single playthrough of the game.
-/// </summary>
 public class GameSession
 {
     public GameState CurrentGameState { get; private set; }
@@ -30,7 +29,6 @@ public class GameSession
     private readonly Random random = new();
     private float maxTimeForStage;
 
-    // --- Frequency tracking for special bubbles ---
     private int shotsSinceBomb;
     private const int ShotsPerBomb = 30;
 
@@ -43,21 +41,26 @@ public class GameSession
     private int shotsSinceMirror;
     private const int ShotsPerMirror = 50;
 
-
     private float currentBubbleRadius;
-    private const float LargeBubbleRadius = 40f;
-    private const float NormalBubbleRadius = 30f;
-    private const float SmallBubbleRadius = 22.5f;
+    private readonly float bubbleSpeed = 1200f * ImGuiHelpers.GlobalScale;
 
-    private const int MaxShots = 8;
     private const float BaseMaxTime = 30.0f;
-    private const float BubbleSpeed = 1200f;
 
     public GameSession(Configuration configuration, AudioManager audioManager)
     {
         this.configuration = configuration;
         this.audioManager = audioManager;
         this.CurrentGameState = GameState.MainMenu;
+    }
+
+    private int GetMaxShotsForStage(int stage)
+    {
+        if (stage >= 50) return 1;
+        if (stage >= 40) return 2;
+        if (stage >= 30) return 3;
+        if (stage >= 20) return 5;
+        if (stage >= 10) return 8;
+        return 8; // Default for stages 1-9
     }
 
     public void Update()
@@ -70,6 +73,7 @@ public class GameSession
         if (this.GameBoard != null && this.GameBoard.IsGameOver())
         {
             this.CurrentGameState = GameState.GameOver;
+            ClearSavedGame();
         }
     }
 
@@ -80,26 +84,41 @@ public class GameSession
         SetupStage();
         this.audioManager.StartBgmPlaylist();
         this.CurrentGameState = GameState.InGame;
+        ClearSavedGame();
+    }
+
+    public void ContinueGame()
+    {
+        if (this.configuration.SavedGame != null)
+        {
+            LoadState(this.configuration.SavedGame);
+            this.audioManager.StartBgmPlaylist();
+            this.CurrentGameState = GameState.InGame;
+        }
     }
 
     private void SetupStage()
     {
         this.IsHelperLineActiveForStage = false;
 
-        if (this.CurrentStage <= 2) this.currentBubbleRadius = LargeBubbleRadius;
-        else if (this.CurrentStage >= 10) this.currentBubbleRadius = SmallBubbleRadius;
-        else this.currentBubbleRadius = NormalBubbleRadius;
+        var baseLargeRadius = 40f;
+        var baseNormalRadius = 30f;
+        var baseSmallRadius = 22.5f;
+
+        if (this.CurrentStage <= 2) this.currentBubbleRadius = baseLargeRadius * ImGuiHelpers.GlobalScale;
+        else if (this.CurrentStage >= 10) this.currentBubbleRadius = baseSmallRadius * ImGuiHelpers.GlobalScale;
+        else this.currentBubbleRadius = baseNormalRadius * ImGuiHelpers.GlobalScale;
 
         this.GameBoard = new GameBoard(this.currentBubbleRadius);
         this.GameBoard.InitializeBoard(this.CurrentStage);
 
-        this.ShotsUntilDrop = MaxShots;
+        this.ShotsUntilDrop = GetMaxShotsForStage(this.CurrentStage);
+
         this.shotsSinceBomb = 0;
         this.shotsSinceStar = 0;
         this.shotsSincePaint = 0;
         this.shotsSinceMirror = 0;
 
-        // Set the ceiling drop timer based on the current stage.
         if (this.CurrentStage >= 20)
         {
             this.maxTimeForStage = 10.0f;
@@ -144,6 +163,7 @@ public class GameSession
 
     public void Debug_ClearStage()
     {
+        if (this.CurrentGameState != GameState.InGame) return;
         this.Score += 1000 * this.CurrentStage;
         this.CurrentGameState = GameState.StageCleared;
     }
@@ -156,7 +176,7 @@ public class GameSession
         {
             HandleCeilingAdvance();
             this.TimeUntilDrop = this.maxTimeForStage;
-            this.ShotsUntilDrop = MaxShots;
+            this.ShotsUntilDrop = GetMaxShotsForStage(this.CurrentStage);
         }
     }
 
@@ -172,10 +192,10 @@ public class GameSession
             this.ActiveBubble.Position.X = this.currentBubbleRadius;
             this.audioManager.PlaySfx("bounce.wav");
         }
-        else if (this.ActiveBubble.Position.X + this.currentBubbleRadius > MainWindow.WindowSize.X)
+        else if (this.ActiveBubble.Position.X + this.currentBubbleRadius > MainWindow.ScaledWindowSize.X)
         {
             this.ActiveBubble.Velocity.X *= -1;
-            this.ActiveBubble.Position.X = MainWindow.WindowSize.X - this.currentBubbleRadius;
+            this.ActiveBubble.Position.X = MainWindow.ScaledWindowSize.X - this.currentBubbleRadius;
             this.audioManager.PlaySfx("bounce.wav");
         }
 
@@ -299,7 +319,7 @@ public class GameSession
         {
             this.IsHelperLineActiveForStage = true;
             var powerUpBubble = clearResult.PoppedBubbles.FirstOrDefault(b => b.BubbleType == GameBoard.PowerUpType);
-            var textPos = powerUpBubble?.Position ?? new Vector2(MainWindow.WindowSize.X / 2, MainWindow.WindowSize.Y / 2);
+            var textPos = powerUpBubble?.Position ?? new Vector2(MainWindow.ScaledWindowSize.X / 2, MainWindow.ScaledWindowSize.Y / 2);
             this.ActiveTextAnimations.Add(new TextAnimation("Aiming Helper!", textPos, ImGui.GetColorU32(new Vector4(0.7f, 0.4f, 1f, 1f)), 2.5f, TextAnimationType.FadeOut, 1.8f));
         }
 
@@ -335,7 +355,6 @@ public class GameSession
         }
     }
 
-
     public void FireBubble(Vector2 direction, Vector2 launcherPosition, Vector2 windowPos)
     {
         if (this.NextBubble == null) return;
@@ -344,7 +363,7 @@ public class GameSession
 
         this.ActiveBubble = this.NextBubble;
         this.ActiveBubble.Position = launcherPosition - windowPos;
-        this.ActiveBubble.Velocity = direction * BubbleSpeed;
+        this.ActiveBubble.Velocity = direction * this.bubbleSpeed;
 
         if (this.ActiveBubble.BubbleType >= 0)
         {
@@ -361,7 +380,7 @@ public class GameSession
         if (this.ShotsUntilDrop <= 0)
         {
             HandleCeilingAdvance();
-            this.ShotsUntilDrop = MaxShots;
+            this.ShotsUntilDrop = GetMaxShotsForStage(this.CurrentStage);
         }
     }
 
@@ -393,12 +412,63 @@ public class GameSession
 
         if (this.GameBoard == null)
         {
-            var radius = this.currentBubbleRadius > 0 ? this.currentBubbleRadius : NormalBubbleRadius;
+            var radius = this.currentBubbleRadius > 0 ? this.currentBubbleRadius : (30f * ImGuiHelpers.GlobalScale);
             return new Bubble(Vector2.Zero, Vector2.Zero, radius, ImGui.GetColorU32(new Vector4(1.0f, 0.2f, 0.2f, 1.0f)), 0);
         }
 
         var bubbleTypes = this.GameBoard.GetAvailableBubbleTypesOnBoard();
         var selectedType = bubbleTypes[this.random.Next(bubbleTypes.Length)];
         return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, selectedType.Color, selectedType.Type);
+    }
+
+    public void SaveState()
+    {
+        if (this.CurrentGameState != GameState.InGame || this.GameBoard == null) return;
+
+        var savedGame = new SavedGame
+        {
+            Score = this.Score,
+            CurrentStage = this.CurrentStage,
+            ShotsUntilDrop = this.ShotsUntilDrop,
+            TimeUntilDrop = this.TimeUntilDrop,
+            IsHelperLineActiveForStage = this.IsHelperLineActiveForStage,
+            Bubbles = this.GameBoard.Bubbles.Select(b => new SerializableBubble { Position = b.Position, BubbleType = b.BubbleType }).ToList(),
+            NextBubble = this.NextBubble != null ? new SerializableBubble { Position = this.NextBubble.Position, BubbleType = this.NextBubble.BubbleType } : null
+        };
+        this.configuration.SavedGame = savedGame;
+        this.configuration.Save();
+    }
+
+    public void LoadState(SavedGame savedGame)
+    {
+        this.Score = savedGame.Score;
+        this.CurrentStage = savedGame.CurrentStage;
+        this.ShotsUntilDrop = savedGame.ShotsUntilDrop;
+        this.TimeUntilDrop = savedGame.TimeUntilDrop;
+        this.IsHelperLineActiveForStage = savedGame.IsHelperLineActiveForStage;
+
+        SetupStage();
+
+        if (this.GameBoard != null)
+        {
+            this.GameBoard.Bubbles.Clear();
+            foreach (var sb in savedGame.Bubbles)
+            {
+                var bubbleTypeDetails = this.GameBoard.GetBubbleDetails(sb.BubbleType);
+                this.GameBoard.Bubbles.Add(new Bubble(sb.Position, Vector2.Zero, this.currentBubbleRadius, bubbleTypeDetails.Color, bubbleTypeDetails.Type));
+            }
+
+            if (savedGame.NextBubble != null)
+            {
+                var nextBubbleDetails = this.GameBoard.GetBubbleDetails(savedGame.NextBubble.BubbleType);
+                this.NextBubble = new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, nextBubbleDetails.Color, nextBubbleDetails.Type);
+            }
+        }
+    }
+
+    public void ClearSavedGame()
+    {
+        this.configuration.SavedGame = null;
+        this.configuration.Save();
     }
 }
