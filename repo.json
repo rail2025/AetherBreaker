@@ -4,7 +4,7 @@
         "Name": "AetherBreaker",
         "Punchline": "A game to play when dead.",
         "Description": "Opens on death, or /abreaker. A Puzzle Bobble clone mini-game.",
-        "Changelog": "v1.0.0.0. Added music, sfx, textures, fixed most show stopping bugs. Some grid snapping bugs still remain.",
+        "Changelog": "v1.1.0.0. Added star, paint, mirror, difficulty increase Some grid snapping bugs still remain.",
         "IsHide": false,
         "InternalName": "AetherBreaker",
         "AssemblyVersion": "1.1.0.0",
