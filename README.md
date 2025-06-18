@@ -12,12 +12,12 @@ Because waiting for res in field ops sucks.
 ![game board 1](https://github.com/user-attachments/assets/4b8c20a1-43f7-4d02-b7cc-d33675ad4de6)
 
 <br>
+![13](https://github.com/user-attachments/assets/bf3612d0-17fe-4165-9d15-84b44f7e9100)
 
-
+<br>![20](https://github.com/user-attachments/assets/38c44152-f121-4407-89ee-7294ed7968a0)
 <br>
-
-<br>
-<br>
+![triggers](https://github.com/user-attachments/assets/7808b782-3cee-4baf-9afb-d57934763f82)
+<br> 
 
 ## Installation
 
