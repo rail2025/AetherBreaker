@@ -205,7 +205,8 @@ public class MainWindow : Window, IDisposable
         if (ImGui.IsWindowHovered())
         {
             var mousePos = ImGui.GetMousePos();
-            if (mousePos.Y < this.launcherPosition.Y)
+            // This condition now also checks that the click is not too close to the launcher itself, creating a small dead zone.
+            if (mousePos.Y < this.launcherPosition.Y - nextBubble.Radius)
             {
                 var direction = Vector2.Normalize(mousePos - this.launcherPosition);
                 if (direction.Y > -0.1f)
@@ -238,8 +239,6 @@ public class MainWindow : Window, IDisposable
             drawList.AddLine(windowPos + pathPoints[i], windowPos + pathPoints[i + 1], color, 2f);
         }
     }
-
-    #region Helpers
 
     /// <summary>
     /// Draws the background image for the current game state.
@@ -348,7 +347,7 @@ public class MainWindow : Window, IDisposable
             }
 
             var tempBubble = new Bubble(currentPos, currentVel, bubbleRadius, 0, 0);
-            if (this.gameSession.GameBoard != null && this.gameSession.GameBoard.CheckCollision(tempBubble))
+            if (this.gameSession.GameBoard != null && this.gameSession.GameBoard.FindCollision(tempBubble) != null)
             {
                 pathPoints.Add(currentPos);
                 return pathPoints;
@@ -358,6 +357,4 @@ public class MainWindow : Window, IDisposable
         pathPoints.Add(currentPos);
         return pathPoints;
     }
-
-    #endregion
 }

@@ -133,7 +133,7 @@ public static class UIManager
         }
 
         // Restore Debug Button
-       // ImGui.SetCursorScreenPos(new Vector2(pauseButtonPos.X, pauseButtonPos.Y - 30));
+        //ImGui.SetCursorScreenPos(new Vector2(pauseButtonPos.X, pauseButtonPos.Y - 30));
         //if (ImGui.Button("Debug: Clear", new Vector2(80, 25)))
         //{
         //    session.Debug_ClearStage();

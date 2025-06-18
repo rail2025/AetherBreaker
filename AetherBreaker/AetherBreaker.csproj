@@ -25,6 +25,10 @@
     <EmbeddedResource Include="Images\dps.png" />
     <EmbeddedResource Include="Images\healer.png" />
     <EmbeddedResource Include="Images\tank.png" />
+    <EmbeddedResource Include="Images\chest.png" />
+    <EmbeddedResource Include="Images\mirror.png" />
+    <EmbeddedResource Include="Images\paint.png" />
+    <EmbeddedResource Include="Images\star.png" />
     <Content Include="repo.json" />
     <EmbeddedResource Include="Sfx\bomb.mp3" />
     <EmbeddedResource Include="Sfx\clearstage.mp3" />
