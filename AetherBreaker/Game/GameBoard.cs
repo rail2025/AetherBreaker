@@ -180,6 +180,32 @@ public class GameBoard
         this.Bubbles = tempBubbles;
     }
 
+    public void AddJunkRows(int rowCount)
+    {
+        if (rowCount <= 0) return;
+
+        float yOffset = rowCount * (this.gridSpacing * 0.866f);
+
+        // Shift all existing bubbles down
+        foreach (var bubble in this.Bubbles)
+        {
+            bubble.Position.Y += yOffset;
+        }
+
+        // Add new junk rows at the top
+        var padding = (MainWindow.ScaledWindowSize.X - this.boardWidth) / 2f;
+        for (var row = 0; row < rowCount; row++)
+        {
+            for (var col = 0; col < (this.gameBoardWidthInBubbles - (row % 2)); col++)
+            {
+                var x = padding + col * this.gridSpacing + (row % 2 == 1 ? this.bubbleRadius : 0);
+                var y = (row * (this.gridSpacing * 0.866f)) + this.ceilingY;
+                var junkBubble = new Bubble(new Vector2(x, y), Vector2.Zero, this.bubbleRadius, ImGui.GetColorU32(new Vector4(0.5f, 0.5f, 0.5f, 1.0f)), -1);
+                this.Bubbles.Add(junkBubble);
+            }
+        }
+    }
+
     public void DrawBoardChrome(ImDrawListPtr drawList, Vector2 windowPos)
     {
         var padding = (MainWindow.ScaledWindowSize.X - this.boardWidth) / 2f;

@@ -24,14 +24,17 @@ public class MainWindow : Window, IDisposable
 
     private static readonly Vector2 BaseWindowSize = new(540, 720);
     public static Vector2 ScaledWindowSize => BaseWindowSize * ImGuiHelpers.GlobalScale;
-    public const float HudAreaHeight = 110f; // Unscaled height of the bottom UI area
+    public const float HudAreaHeight = 110f;
+
+    // Public accessor for the GameSession
+    public GameSession GetGameSession() => this.gameSession;
 
     public MainWindow(Plugin plugin, AudioManager audioManager) : base("AetherBreaker")
     {
         this.plugin = plugin;
         this.audioManager = audioManager;
         this.textureManager = new TextureManager();
-        this.gameSession = new GameSession(plugin.Configuration, audioManager);
+        this.gameSession = new GameSession(plugin.Configuration, audioManager, plugin.NetworkManager);
 
         this.Flags |= ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
     }
@@ -67,7 +70,7 @@ public class MainWindow : Window, IDisposable
         switch (this.gameSession.CurrentGameState)
         {
             case GameState.MainMenu:
-                UIManager.DrawMainMenu(this.gameSession.StartNewGame, this.gameSession.ContinueGame, this.plugin.Configuration.SavedGame != null, this.plugin.ToggleConfigUI, this.plugin.ToggleAboutUI);
+                UIManager.DrawMainMenu(this.plugin, this.gameSession.StartNewGame, this.gameSession.ContinueGame, this.plugin.Configuration.SavedGame != null, this.plugin.ToggleConfigUI, this.plugin.ToggleAboutUI);
                 break;
             case GameState.InGame:
                 DrawInGame();
@@ -81,6 +84,51 @@ public class MainWindow : Window, IDisposable
             case GameState.GameOver:
                 UIManager.DrawGameOverScreen(this.gameSession.GoToMainMenu);
                 break;
+        }
+
+        DrawMultiplayerOverlays();
+    }
+
+    private void DrawMultiplayerOverlays()
+    {
+        if (!gameSession.IsMultiplayerMode) return;
+
+        string overlayText = "";
+        bool showRematch = false;
+
+        switch (gameSession.CurrentMatchState)
+        {
+            case GameSession.MultiplayerMatchState.RoundStarting:
+                overlayText = "Round Start!";
+                break;
+            case GameSession.MultiplayerMatchState.RoundOver:
+                overlayText = gameSession.MyScore > gameSession.OpponentScore ? "YOU WIN THE ROUND!" : "YOU LOSE THE ROUND";
+                showRematch = true;
+                break;
+            case GameSession.MultiplayerMatchState.MatchOver:
+                overlayText = gameSession.MyScore > gameSession.OpponentScore ? "YOU WIN THE MATCH!" : "YOU LOSE THE MATCH";
+                showRematch = true;
+                break;
+        }
+
+        if (!string.IsNullOrEmpty(overlayText))
+        {
+            var viewportSize = ImGui.GetWindowSize();
+            var textSize = ImGui.CalcTextSize(overlayText) * 2f;
+            var textPos = ImGui.GetWindowPos() + new Vector2((viewportSize.X - textSize.X) * 0.5f, viewportSize.Y * 0.4f);
+
+            ImGui.GetWindowDrawList().AddText(ImGui.GetFont(), ImGui.GetFontSize() * 2f, textPos, 0xFFFFFFFF, overlayText);
+
+            if (showRematch)
+            {
+                var buttonSize = new Vector2(120, 30) * ImGuiHelpers.GlobalScale;
+                var buttonPos = new Vector2((viewportSize.X - buttonSize.X) * 0.5f, (textPos - ImGui.GetWindowPos()).Y + textSize.Y + 20);
+                ImGui.SetCursorPos(buttonPos);
+                if (ImGui.Button("Rematch?", buttonSize))
+                {
+                    gameSession.RequestRematch();
+                }
+            }
         }
     }
 
@@ -109,7 +157,7 @@ public class MainWindow : Window, IDisposable
         UpdateAndDrawBubbleAnimations(drawList, windowPos);
         UpdateAndDrawTextAnimations(drawList, windowPos);
 
-        UIManager.DrawGameUI(drawList, windowPos, this.launcherPosition, this.gameSession, this.plugin, this.audioManager);
+        UIManager.DrawGameUI(drawList, windowPos, this.gameSession, this.plugin, this.audioManager, this.textureManager);
     }
 
     private void DrawPausedScreen()
@@ -126,7 +174,7 @@ public class MainWindow : Window, IDisposable
             this.gameSession.GameBoard.DrawBoardChrome(drawList, windowPos);
         }
 
-        UIManager.DrawGameUI(drawList, windowPos, this.launcherPosition, this.gameSession, this.plugin, this.audioManager);
+        UIManager.DrawGameUI(drawList, windowPos, this.gameSession, this.plugin, this.audioManager, this.textureManager);
 
         UIManager.DrawPausedScreen(
             () => this.gameSession.SetGameState(GameState.InGame),
@@ -198,6 +246,44 @@ public class MainWindow : Window, IDisposable
                     this.gameSession.FireBubble(direction, this.launcherPosition, windowPos);
             }
         }
+    }
+
+    private List<Vector2> PredictHelperLinePath(Vector2 startPos, Vector2 velocity, float bubbleRadius)
+    {
+        var pathPoints = new List<Vector2> { startPos };
+        var currentPos = startPos;
+        var currentVel = velocity;
+        int bounces = 0;
+
+        for (int i = 0; i < 400; i++)
+        {
+            currentPos += currentVel * 0.01f;
+
+            if (currentPos.X - bubbleRadius < 0)
+            {
+                currentVel.X *= -1;
+                currentPos.X = bubbleRadius;
+                pathPoints.Add(currentPos);
+                bounces++;
+            }
+            else if (currentPos.X + bubbleRadius > ScaledWindowSize.X)
+            {
+                currentVel.X *= -1;
+                currentPos.X = ScaledWindowSize.X - bubbleRadius;
+                pathPoints.Add(currentPos);
+                bounces++;
+            }
+
+            var tempBubble = new Bubble(currentPos, currentVel, bubbleRadius, 0, 0);
+            if (this.gameSession.GameBoard != null && this.gameSession.GameBoard.FindCollision(tempBubble) != null)
+            {
+                pathPoints.Add(currentPos);
+                return pathPoints;
+            }
+            if (bounces >= 5) return pathPoints;
+        }
+        pathPoints.Add(currentPos);
+        return pathPoints;
     }
 
     private void DrawHelperLine(ImDrawListPtr drawList, Vector2 direction, Vector2 windowPos)
@@ -278,43 +364,5 @@ public class MainWindow : Window, IDisposable
                 this.gameSession.ActiveTextAnimations.RemoveAt(i);
             }
         }
-    }
-
-    private List<Vector2> PredictHelperLinePath(Vector2 startPos, Vector2 velocity, float bubbleRadius)
-    {
-        var pathPoints = new List<Vector2> { startPos };
-        var currentPos = startPos;
-        var currentVel = velocity;
-        int bounces = 0;
-
-        for (int i = 0; i < 400; i++)
-        {
-            currentPos += currentVel * 0.01f;
-
-            if (currentPos.X - bubbleRadius < 0)
-            {
-                currentVel.X *= -1;
-                currentPos.X = bubbleRadius;
-                pathPoints.Add(currentPos);
-                bounces++;
-            }
-            else if (currentPos.X + bubbleRadius > ScaledWindowSize.X)
-            {
-                currentVel.X *= -1;
-                currentPos.X = ScaledWindowSize.X - bubbleRadius;
-                pathPoints.Add(currentPos);
-                bounces++;
-            }
-
-            var tempBubble = new Bubble(currentPos, currentVel, bubbleRadius, 0, 0);
-            if (this.gameSession.GameBoard != null && this.gameSession.GameBoard.FindCollision(tempBubble) != null)
-            {
-                pathPoints.Add(currentPos);
-                return pathPoints;
-            }
-            if (bounces >= 5) return pathPoints;
-        }
-        pathPoints.Add(currentPos);
-        return pathPoints;
     }
 }

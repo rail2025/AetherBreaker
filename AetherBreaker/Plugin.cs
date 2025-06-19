@@ -6,6 +6,8 @@ using Dalamud.Plugin.Services;
 using AetherBreaker.Windows;
 using AetherBreaker.Audio;
 using Dalamud.Game.ClientState.Conditions;
+using AetherBreaker.Networking;
+using AetherBreaker.Game;
 
 namespace AetherBreaker;
 
@@ -18,15 +20,18 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
+    [PluginService] internal static IPartyList? PartyList { get; private set; } = null!;
 
     private const string CommandName = "/abreaker";
 
     public Configuration Configuration { get; init; }
+    public NetworkManager NetworkManager { get; init; }
     public AudioManager AudioManager { get; init; }
     public readonly WindowSystem WindowSystem = new("AetherBreaker");
     private ConfigWindow ConfigWindow { get; init; }
     private MainWindow MainWindow { get; init; }
     private AboutWindow AboutWindow { get; init; }
+    private MultiplayerWindow MultiplayerWindow { get; init; }
 
     private bool wasDead = false;
 
@@ -34,24 +39,35 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Configuration.Initialize(PluginInterface);
+        NetworkManager = new NetworkManager();
         AudioManager = new AudioManager(this.Configuration);
 
+        // Initialize Windows
         ConfigWindow = new ConfigWindow(this, this.AudioManager);
         MainWindow = new MainWindow(this, this.AudioManager);
+        AboutWindow = new AboutWindow();
+        MultiplayerWindow = new MultiplayerWindow(this);
 
+        // Add Windows to WindowSystem
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
-
-        AboutWindow = new AboutWindow();
         WindowSystem.AddWindow(AboutWindow);
+        WindowSystem.AddWindow(MultiplayerWindow);
 
+        // Add Command Handlers
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Opens the AetherBreaker game window."
         });
 
+        // Subscribe to Events
         ClientState.TerritoryChanged += OnTerritoryChanged;
         Condition.ConditionChange += OnConditionChanged;
+        NetworkManager.OnConnected += OnNetworkConnected;
+        NetworkManager.OnDisconnected += OnNetworkDisconnected;
+        NetworkManager.OnError += OnNetworkError;
+        NetworkManager.OnGameStateUpdateReceived += OnGameStateUpdateReceived;
+
 
         PluginInterface.UiBuilder.Draw += DrawUI;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUI;
@@ -60,25 +76,47 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        WindowSystem.RemoveAllWindows();
-        ConfigWindow.Dispose();
-        this.AudioManager.Dispose();
-        MainWindow.Dispose();
-        CommandManager.RemoveHandler(CommandName);
+        // Unsubscribe from events first
         ClientState.TerritoryChanged -= OnTerritoryChanged;
         Condition.ConditionChange -= OnConditionChanged;
+        NetworkManager.OnConnected -= OnNetworkConnected;
+        NetworkManager.OnDisconnected -= OnNetworkDisconnected;
+        NetworkManager.OnError -= OnNetworkError;
+        NetworkManager.OnGameStateUpdateReceived -= OnGameStateUpdateReceived;
+
+        PluginInterface.UiBuilder.Draw -= DrawUI;
+        PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUI;
+        PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUI;
+
+        CommandManager.RemoveHandler(CommandName);
+
+        // Dispose of resources
+        this.WindowSystem.RemoveAllWindows();
+        ConfigWindow.Dispose();
+        MainWindow.Dispose();
+        AboutWindow.Dispose();
+        MultiplayerWindow.Dispose();
+        this.AudioManager.Dispose();
+        this.NetworkManager.Dispose();
     }
 
     private void OnCommand(string command, string args)
     {
         ToggleMainUI();
-        AboutWindow.Dispose();
     }
 
     private void DrawUI() => WindowSystem.Draw();
     public void ToggleConfigUI() => ConfigWindow.Toggle();
     public void ToggleMainUI() => MainWindow.Toggle();
     public void ToggleAboutUI() => AboutWindow.Toggle();
+    public void ToggleMultiplayerUI() => MultiplayerWindow.Toggle();
+
+    // Network Event Handlers
+    private void OnNetworkConnected() => this.MultiplayerWindow.SetConnectionStatus("Connected", false);
+    private void OnNetworkDisconnected() => this.MultiplayerWindow.SetConnectionStatus("Disconnected", true);
+    private void OnNetworkError(string message) => this.MultiplayerWindow.SetConnectionStatus(message, true);
+    private void OnGameStateUpdateReceived(byte[] state) => this.MainWindow.GetGameSession().ReceiveOpponentBoardState(state);
+
 
     private void OnTerritoryChanged(ushort territoryTypeId)
     {

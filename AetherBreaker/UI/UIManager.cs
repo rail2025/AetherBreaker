@@ -23,7 +23,7 @@ public static class UIManager
         drawList.AddText(ImGui.GetFont(), fontSize, pos, color, text);
     }
 
-    public static void DrawMainMenu(Action startGame, Action continueGame, bool hasSavedGame, Action openSettings, Action openAbout)
+    public static void DrawMainMenu(Plugin plugin, Action startGame, Action continueGame, bool hasSavedGame, Action openSettings, Action openAbout)
     {
         var drawList = ImGui.GetWindowDrawList();
         var windowPos = ImGui.GetWindowPos();
@@ -64,6 +64,9 @@ public static class UIManager
             currentY += buttonSpacing;
         }
 
+        DrawButtonWithOutline("Multiplayer", "Multiplayer", new Vector2(buttonX, currentY), buttonSize, plugin.ToggleMultiplayerUI);
+        currentY += buttonSpacing;
+
         DrawButtonWithOutline("Settings", "Settings", new Vector2(buttonX, currentY), buttonSize, openSettings);
         currentY += buttonSpacing;
 
@@ -73,16 +76,14 @@ public static class UIManager
     public static void DrawGameUI(
         ImDrawListPtr drawList,
         Vector2 windowPos,
-        Vector2 launcherPosition,
         GameSession session,
         Plugin plugin,
-        AudioManager audioManager)
+        AudioManager audioManager,
+        TextureManager textureManager)
     {
         var globalScale = ImGuiHelpers.GlobalScale;
-
         var hudY = MainWindow.ScaledWindowSize.Y - (MainWindow.HudAreaHeight * globalScale);
         ImGui.SetCursorPos(new Vector2(0, hudY));
-
         ImGui.Columns(3, "hudColumns", false);
 
         var leftColumnWidth = 220 * globalScale;
@@ -93,48 +94,102 @@ public static class UIManager
         // --- Left Column ---
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 10 * globalScale);
         ImGui.BeginGroup();
-        ImGui.Text($"High Score: {plugin.Configuration.HighScore}");
-        ImGui.Text($"Score: {session.Score}");
-        ImGui.Text($"Stage: {session.CurrentStage}");
 
-        var settingsButtonSize = new Vector2(80, 25) * globalScale;
-        if (ImGui.Button("Settings", settingsButtonSize))
+        if (session.IsMultiplayerMode)
         {
-            plugin.ToggleConfigUI();
+            // Multiplayer HUD
+            ImGui.Text($"YOU: {session.MyScore} | OPPONENT: {session.OpponentScore}");
+
+            string statusText = session.CurrentMatchState switch
+            {
+                GameSession.MultiplayerMatchState.WaitingForOpponent => "Waiting for opponent...",
+                GameSession.MultiplayerMatchState.RoundStarting => "Round Starting...",
+                GameSession.MultiplayerMatchState.RoundInProgress => "Round in Progress",
+                GameSession.MultiplayerMatchState.RoundOver => "Round Over",
+                GameSession.MultiplayerMatchState.MatchOver => "Match Over",
+                _ => "Connecting..."
+            };
+            ImGui.Text(statusText);
+
+            var disconnectButtonSize = new Vector2(100, 25) * globalScale;
+            if (ImGui.Button("Disconnect", disconnectButtonSize))
+            {
+                _ = plugin.NetworkManager.DisconnectAsync();
+            }
         }
-        ImGui.SameLine();
-        ImGui.PushItemWidth(40 * globalScale); // Slider width reduced
-        var volume = plugin.Configuration.MusicVolume;
-        if (ImGui.SliderFloat("##MusicVol", ref volume, 0.0f, 1.0f, ""))
+        else
         {
-            audioManager.SetMusicVolume(volume);
-            plugin.Configuration.MusicVolume = volume;
-            plugin.Configuration.Save();
+            // Single Player HUD
+            ImGui.Text($"High Score: {plugin.Configuration.HighScore}");
+            ImGui.Text($"Score: {session.Score}");
+            ImGui.Text($"Stage: {session.CurrentStage}");
+
+            var settingsButtonSize = new Vector2(80, 25) * globalScale;
+            if (ImGui.Button("Settings", settingsButtonSize))
+            {
+                plugin.ToggleConfigUI();
+            }
+            ImGui.SameLine();
+            ImGui.PushItemWidth(40 * globalScale);
+            var volume = plugin.Configuration.MusicVolume;
+            if (ImGui.SliderFloat("##MusicVol", ref volume, 0.0f, 1.0f, ""))
+            {
+                audioManager.SetMusicVolume(volume);
+                plugin.Configuration.MusicVolume = volume;
+                plugin.Configuration.Save();
+            }
+            ImGui.PopItemWidth();
+            ImGui.SameLine();
+            var isMuted = plugin.Configuration.IsBgmMuted;
+            if (ImGui.Checkbox("##Mute", ref isMuted))
+            {
+                plugin.Configuration.IsBgmMuted = isMuted;
+                plugin.Configuration.Save();
+                audioManager.UpdateBgmState();
+            }
+            ImGui.SameLine();
+            ImGui.Text("Mute");
         }
-        ImGui.PopItemWidth();
-        ImGui.SameLine();
-        var isMuted = plugin.Configuration.IsBgmMuted; // Mute checkbox restored
-        if (ImGui.Checkbox("##Mute", ref isMuted))
-        {
-            plugin.Configuration.IsBgmMuted = isMuted;
-            plugin.Configuration.Save();
-            audioManager.UpdateBgmState();
-        }
-        ImGui.SameLine();
-        ImGui.Text("Mute");
+
         ImGui.EndGroup();
 
-        // --- Center Column (for launcher) ---
+        // --- Center Column (Opponent Preview) ---
         ImGui.NextColumn();
+        if (session.IsMultiplayerMode && session.OpponentBoardState != null)
+        {
+            var previewAreaPos = windowPos + new Vector2(ImGui.GetColumnOffset(1) + 5 * globalScale, hudY - 180f * globalScale);
+            var previewAreaSize = new Vector2(ImGui.GetColumnWidth(1) - 10 * globalScale, 175f * globalScale);
+            drawList.AddRectFilled(previewAreaPos, previewAreaPos + previewAreaSize, 0x80000000);
+
+            Vector2 iconSize = new Vector2(10f, 10f) * globalScale;
+            Vector2 currentIconPos = previewAreaPos + new Vector2(5, 5);
+
+            foreach (byte bubbleTypeByte in session.OpponentBoardState)
+            {
+                var bubbleTexture = textureManager.GetBubbleTexture((int)(sbyte)bubbleTypeByte); // Cast to signed byte then int
+                if (bubbleTexture != null)
+                {
+                    drawList.AddImage(bubbleTexture.ImGuiHandle, currentIconPos, currentIconPos + iconSize);
+                }
+
+                currentIconPos.X += iconSize.X + (2 * globalScale);
+                if (currentIconPos.X + iconSize.X > previewAreaPos.X + previewAreaSize.X)
+                {
+                    currentIconPos.X = previewAreaPos.X + 5;
+                    currentIconPos.Y += iconSize.Y + (2 * globalScale);
+                }
+            }
+        }
+
 
         // --- Right Column ---
         ImGui.NextColumn();
 
-       // var debugButtonSize = new Vector2(80, 25) * globalScale;
-        //if (ImGui.Button("Debug: Clear", debugButtonSize))
-        //{
-         //   session.Debug_ClearStage();
-        //}
+        var debugButtonSize = new Vector2(80, 25) * globalScale;
+        if (ImGui.Button("Debug: Clear", debugButtonSize))
+        {
+            session.Debug_ClearStage();
+        }
 
         var pauseButtonSize = new Vector2(80, 25) * globalScale;
         if (ImGui.Button("Pause", pauseButtonSize))

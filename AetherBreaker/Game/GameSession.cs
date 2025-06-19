@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using AetherBreaker.Audio;
+using AetherBreaker.Networking;
 using AetherBreaker.Windows;
-using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using ImGuiNET;
 
@@ -23,6 +23,16 @@ public class GameSession
     public Bubble? NextBubble { get; private set; }
     public List<BubbleAnimation> ActiveBubbleAnimations { get; } = new();
     public List<TextAnimation> ActiveTextAnimations { get; } = new();
+
+    // Multiplayer State
+    private readonly NetworkManager? networkManager;
+    public enum MultiplayerMatchState { None, WaitingForOpponent, RoundStarting, RoundInProgress, RoundOver, MatchOver }
+    public MultiplayerMatchState CurrentMatchState { get; private set; }
+    public int MyScore { get; private set; }
+    public int OpponentScore { get; private set; }
+    public bool IsMultiplayerMode => this.networkManager != null;
+    public byte[]? OpponentBoardState { get; private set; }
+    private float gameStateSendTimer = 0f;
 
     private readonly Configuration configuration;
     private readonly AudioManager audioManager;
@@ -46,11 +56,59 @@ public class GameSession
 
     private const float BaseMaxTime = 30.0f;
 
-    public GameSession(Configuration configuration, AudioManager audioManager)
+    public GameSession(Configuration configuration, AudioManager audioManager, NetworkManager? networkManager = null)
     {
         this.configuration = configuration;
         this.audioManager = audioManager;
+        this.networkManager = networkManager; // Store the network manager
+
+        // Subscribe to network events if in multiplayer mode
+        if (this.IsMultiplayerMode && this.networkManager != null)
+        {
+            this.networkManager.OnAttackReceived += HandleAttackReceived;
+        }
+
+        // Initialize state
         this.CurrentGameState = GameState.MainMenu;
+        this.CurrentMatchState = MultiplayerMatchState.None;
+        this.MyScore = 0;
+        this.OpponentScore = 0;
+    }
+
+    private void HandleAttackReceived(int rowCount)
+    {
+        if (this.GameBoard != null)
+        {
+            this.GameBoard.AddJunkRows(rowCount);
+        }
+    }
+
+    public void ReceiveOpponentBoardState(byte[] state)
+    {
+        this.OpponentBoardState = state;
+    }
+
+    public void RequestRematch()
+    {
+        if (IsMultiplayerMode && networkManager != null)
+        {
+            _ = networkManager.SendMatchControl(PayloadActionType.Rematch);
+        }
+    }
+
+    private byte[]? SerializeBoardState()
+    {
+        if (GameBoard == null || !GameBoard.Bubbles.Any()) return null;
+
+        var boardData = new List<byte>();
+        foreach (var bubble in GameBoard.Bubbles.OrderBy(b => b.Position.Y).ThenBy(b => b.Position.X))
+        {
+            // Simple serialization: just the type.
+            // Note: This loses position data and is only for a simple visual display.
+            // A more complex representation would be needed for a perfect grid reconstruction.
+            boardData.Add((byte)bubble.BubbleType);
+        }
+        return boardData.ToArray();
     }
 
     private int GetMaxShotsForStage(int stage)
@@ -66,6 +124,21 @@ public class GameSession
     public void Update()
     {
         if (this.CurrentGameState != GameState.InGame) return;
+
+        // Multiplayer: Send game state periodically
+        if (IsMultiplayerMode && CurrentMatchState == MultiplayerMatchState.RoundInProgress)
+        {
+            gameStateSendTimer += ImGui.GetIO().DeltaTime;
+            if (gameStateSendTimer >= 0.5f) // Send twice per second
+            {
+                gameStateSendTimer = 0f;
+                var boardState = SerializeBoardState();
+                if (boardState != null && networkManager != null)
+                {
+                    _ = networkManager.SendGameState(boardState);
+                }
+            }
+        }
 
         UpdateTimers();
         UpdateActiveBubble();
@@ -147,6 +220,11 @@ public class GameSession
             this.configuration.Save();
         }
         this.CurrentGameState = GameState.MainMenu;
+        // If in a match, also send a disconnect message
+        if (IsMultiplayerMode && networkManager != null)
+        {
+            _ = networkManager.DisconnectAsync();
+        }
     }
 
     public void ContinueToNextStage()
@@ -294,6 +372,12 @@ public class GameSession
     private void HandleClearResult(ClearResult clearResult)
     {
         if (this.GameBoard == null || clearResult == null) return;
+
+        // Multiplayer: Send attack if conditions are met
+        if (IsMultiplayerMode && clearResult.DroppedBubbles.Count > 3 && networkManager != null)
+        {
+            _ = networkManager.SendAttackData(clearResult.DroppedBubbles.Count);
+        }
 
         var droppedBombs = clearResult.DroppedBubbles.Where(b => b.BubbleType == GameBoard.BombType).ToList();
         if (droppedBombs.Any())
