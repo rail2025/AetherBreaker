@@ -1,16 +1,32 @@
 using System.Numerics;
-using ImGuiNET;
+using Serilog.Filters;
 
 namespace AetherBreaker.Game;
 
 /// <summary>
 /// Represents a bubble in the game with position, velocity, and visual properties.
+/// All positional and size data is stored in an unscaled coordinate system.
 /// </summary>
 public class Bubble
 {
+    /// <summary>
+    /// The unscaled position of the bubble within the game board's coordinate system.
+    /// </summary>
     public Vector2 Position;
+
+    /// <summary>
+    /// The unscaled velocity of the bubble.
+    /// </summary>
     public Vector2 Velocity;
+
+    /// <summary>
+    /// The unscaled radius of the bubble.
+    /// </summary>
     public float Radius;
+
+    /// <summary>
+    /// The display color of the bubble.
+    /// </summary>
     public uint Color;
 
     /// <summary>
@@ -25,15 +41,5 @@ public class Bubble
         this.Radius = radius;
         this.Color = color;
         this.BubbleType = bubbleType;
-    }
-
-    /// <summary>
-    /// Draws the bubble on the screen.
-    /// </summary>
-    /// <param name="drawList">The ImGui draw list to render to.</param>
-    /// <param name="windowPos">The top-left position of the game window.</param>
-    public void Draw(ImDrawListPtr drawList, Vector2 windowPos)
-    {
-        drawList.AddCircleFilled(windowPos + this.Position, this.Radius, this.Color);
     }
 }

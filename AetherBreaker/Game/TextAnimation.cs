@@ -88,12 +88,14 @@ public class TextAnimation
     /// Updates the animation's state for the current frame.
     /// </summary>
     /// <returns>True if the animation is still ongoing; otherwise, false.</returns>
-    public bool Update()
+    // CHANGE: The Update method now correctly accepts a deltaTime parameter.
+    public bool Update(float deltaTime)
     {
         // For animations that move, update their position based on velocity and frame time.
         if (this.Type == TextAnimationType.FloatAndFade)
         {
-            this.Position += this.velocity * ImGui.GetIO().DeltaTime;
+            // Use the passed-in deltaTime instead of fetching it from ImGui.
+            this.Position += this.velocity * deltaTime;
         }
 
         // The animation is considered finished once its duration has elapsed.

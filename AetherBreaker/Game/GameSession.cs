@@ -5,8 +5,6 @@ using System.Numerics;
 using AetherBreaker.Audio;
 using AetherBreaker.Networking;
 using AetherBreaker.Windows;
-using Dalamud.Interface.Utility;
-using ImGuiNET;
 
 namespace AetherBreaker.Game;
 
@@ -24,15 +22,8 @@ public class GameSession
     public List<BubbleAnimation> ActiveBubbleAnimations { get; } = new();
     public List<TextAnimation> ActiveTextAnimations { get; } = new();
 
-    // Multiplayer State
     private readonly NetworkManager? networkManager;
-    public enum MultiplayerMatchState { None, WaitingForOpponent, RoundStarting, RoundInProgress, RoundOver, MatchOver }
-    public MultiplayerMatchState CurrentMatchState { get; private set; }
-    public int MyScore { get; private set; }
-    public int OpponentScore { get; private set; }
     public bool IsMultiplayerMode => this.networkManager != null;
-    public byte[]? OpponentBoardState { get; private set; }
-    private float gameStateSendTimer = 0f;
 
     private readonly Configuration configuration;
     private readonly AudioManager audioManager;
@@ -41,75 +32,28 @@ public class GameSession
 
     private int shotsSinceBomb;
     private const int ShotsPerBomb = 30;
-
     private int shotsSinceStar;
     private const int ShotsPerStar = 100;
-
     private int shotsSincePaint;
     private const int ShotsPerPaint = 30;
-
     private int shotsSinceMirror;
     private const int ShotsPerMirror = 50;
 
     private float currentBubbleRadius;
-    private readonly float bubbleSpeed = 1200f * ImGuiHelpers.GlobalScale;
+    private const float BubbleSpeed = 40f;
 
+    private float abstractGameOverLineY;
     private const float BaseMaxTime = 30.0f;
 
     public GameSession(Configuration configuration, AudioManager audioManager, NetworkManager? networkManager = null)
     {
         this.configuration = configuration;
         this.audioManager = audioManager;
-        this.networkManager = networkManager; // Store the network manager
-
-        // Subscribe to network events if in multiplayer mode
-        if (this.IsMultiplayerMode && this.networkManager != null)
-        {
-            this.networkManager.OnAttackReceived += HandleAttackReceived;
-        }
-
-        // Initialize state
+        this.networkManager = networkManager;
         this.CurrentGameState = GameState.MainMenu;
-        this.CurrentMatchState = MultiplayerMatchState.None;
-        this.MyScore = 0;
-        this.OpponentScore = 0;
     }
 
-    private void HandleAttackReceived(int rowCount)
-    {
-        if (this.GameBoard != null)
-        {
-            this.GameBoard.AddJunkRows(rowCount);
-        }
-    }
-
-    public void ReceiveOpponentBoardState(byte[] state)
-    {
-        this.OpponentBoardState = state;
-    }
-
-    public void RequestRematch()
-    {
-        if (IsMultiplayerMode && networkManager != null)
-        {
-            _ = networkManager.SendMatchControl(PayloadActionType.Rematch);
-        }
-    }
-
-    private byte[]? SerializeBoardState()
-    {
-        if (GameBoard == null || !GameBoard.Bubbles.Any()) return null;
-
-        var boardData = new List<byte>();
-        foreach (var bubble in GameBoard.Bubbles.OrderBy(b => b.Position.Y).ThenBy(b => b.Position.X))
-        {
-            // Simple serialization: just the type.
-            // Note: This loses position data and is only for a simple visual display.
-            // A more complex representation would be needed for a perfect grid reconstruction.
-            boardData.Add((byte)bubble.BubbleType);
-        }
-        return boardData.ToArray();
-    }
+    public float GetAbstractGameOverLineY() => this.abstractGameOverLineY;
 
     private int GetMaxShotsForStage(int stage)
     {
@@ -118,32 +62,17 @@ public class GameSession
         if (stage >= 30) return 3;
         if (stage >= 20) return 5;
         if (stage >= 10) return 8;
-        return 8; // Default for stages 1-9
+        return 8;
     }
 
-    public void Update()
+    public void Update(float deltaTime)
     {
         if (this.CurrentGameState != GameState.InGame) return;
 
-        // Multiplayer: Send game state periodically
-        if (IsMultiplayerMode && CurrentMatchState == MultiplayerMatchState.RoundInProgress)
-        {
-            gameStateSendTimer += ImGui.GetIO().DeltaTime;
-            if (gameStateSendTimer >= 0.5f) // Send twice per second
-            {
-                gameStateSendTimer = 0f;
-                var boardState = SerializeBoardState();
-                if (boardState != null && networkManager != null)
-                {
-                    _ = networkManager.SendGameState(boardState);
-                }
-            }
-        }
+        UpdateTimers(deltaTime);
+        UpdateActiveBubble(deltaTime);
 
-        UpdateTimers();
-        UpdateActiveBubble();
-
-        if (this.GameBoard != null && this.GameBoard.IsGameOver())
+        if (this.GameBoard != null && this.GameBoard.Bubbles.Any(b => b.Position.Y + b.Radius >= this.abstractGameOverLineY))
         {
             this.CurrentGameState = GameState.GameOver;
             ClearSavedGame();
@@ -174,36 +103,24 @@ public class GameSession
     {
         this.IsHelperLineActiveForStage = false;
 
-        var baseLargeRadius = 40f;
-        var baseNormalRadius = 30f;
-        var baseSmallRadius = 22.5f;
-
-        if (this.CurrentStage <= 2) this.currentBubbleRadius = baseLargeRadius * ImGuiHelpers.GlobalScale;
-        else if (this.CurrentStage >= 10) this.currentBubbleRadius = baseSmallRadius * ImGuiHelpers.GlobalScale;
-        else this.currentBubbleRadius = baseNormalRadius * ImGuiHelpers.GlobalScale;
-
-        this.GameBoard = new GameBoard(this.currentBubbleRadius);
+        this.GameBoard = new GameBoard(this.CurrentStage);
         this.GameBoard.InitializeBoard(this.CurrentStage);
 
-        this.ShotsUntilDrop = GetMaxShotsForStage(this.CurrentStage);
+        this.currentBubbleRadius = this.GameBoard.GetBubbleRadius();
 
+        float abstractGameHeight = this.GameBoard.AbstractWidth * (MainWindow.BaseWindowSize.Y / MainWindow.BaseWindowSize.X);
+        float abstractHudHeight = this.GameBoard.AbstractWidth * (MainWindow.HudAreaHeight / MainWindow.BaseWindowSize.X);
+        this.abstractGameOverLineY = abstractGameHeight - abstractHudHeight;
+
+        this.ShotsUntilDrop = GetMaxShotsForStage(this.CurrentStage);
         this.shotsSinceBomb = 0;
         this.shotsSinceStar = 0;
         this.shotsSincePaint = 0;
         this.shotsSinceMirror = 0;
 
-        if (this.CurrentStage >= 20)
-        {
-            this.maxTimeForStage = 10.0f;
-        }
-        else if (this.CurrentStage >= 15)
-        {
-            this.maxTimeForStage = 20.0f;
-        }
-        else
-        {
-            this.maxTimeForStage = BaseMaxTime - ((this.CurrentStage - 1) / 2 * 0.5f);
-        }
+        if (this.CurrentStage >= 20) this.maxTimeForStage = 10.0f;
+        else if (this.CurrentStage >= 15) this.maxTimeForStage = 20.0f;
+        else this.maxTimeForStage = BaseMaxTime - ((this.CurrentStage - 1) / 2 * 0.5f);
 
         this.TimeUntilDrop = this.maxTimeForStage;
         this.ActiveBubble = null;
@@ -220,11 +137,6 @@ public class GameSession
             this.configuration.Save();
         }
         this.CurrentGameState = GameState.MainMenu;
-        // If in a match, also send a disconnect message
-        if (IsMultiplayerMode && networkManager != null)
-        {
-            _ = networkManager.DisconnectAsync();
-        }
     }
 
     public void ContinueToNextStage()
@@ -239,17 +151,10 @@ public class GameSession
         this.CurrentGameState = newState;
     }
 
-    public void Debug_ClearStage()
-    {
-        if (this.CurrentGameState != GameState.InGame) return;
-        this.Score += 1000 * this.CurrentStage;
-        this.CurrentGameState = GameState.StageCleared;
-    }
-
-    private void UpdateTimers()
+    private void UpdateTimers(float deltaTime)
     {
         if (this.GameBoard == null) return;
-        this.TimeUntilDrop -= ImGui.GetIO().DeltaTime;
+        this.TimeUntilDrop -= deltaTime;
         if (this.TimeUntilDrop <= 0)
         {
             HandleCeilingAdvance();
@@ -258,11 +163,11 @@ public class GameSession
         }
     }
 
-    private void UpdateActiveBubble()
+    private void UpdateActiveBubble(float deltaTime)
     {
         if (this.ActiveBubble == null || this.GameBoard == null) return;
 
-        this.ActiveBubble.Position += this.ActiveBubble.Velocity * ImGui.GetIO().DeltaTime;
+        this.ActiveBubble.Position += this.ActiveBubble.Velocity * deltaTime;
 
         if (this.ActiveBubble.Position.X - this.currentBubbleRadius < 0)
         {
@@ -270,10 +175,10 @@ public class GameSession
             this.ActiveBubble.Position.X = this.currentBubbleRadius;
             this.audioManager.PlaySfx("bounce.wav");
         }
-        else if (this.ActiveBubble.Position.X + this.currentBubbleRadius > MainWindow.ScaledWindowSize.X)
+        else if (this.ActiveBubble.Position.X + this.currentBubbleRadius > this.GameBoard.AbstractWidth)
         {
             this.ActiveBubble.Velocity.X *= -1;
-            this.ActiveBubble.Position.X = MainWindow.ScaledWindowSize.X - this.currentBubbleRadius;
+            this.ActiveBubble.Position.X = this.GameBoard.AbstractWidth - this.currentBubbleRadius;
             this.audioManager.PlaySfx("bounce.wav");
         }
 
@@ -281,63 +186,69 @@ public class GameSession
         if (collidedWith != null)
         {
             this.audioManager.PlaySfx("land.wav");
-            ClearResult clearResult = new ClearResult();
-            bool wasSpecialAction = true;
-
-            switch (this.ActiveBubble.BubbleType)
-            {
-                case GameBoard.StarType:
-                    if (collidedWith.BubbleType >= 0)
-                        clearResult = this.GameBoard.ActivateStar(collidedWith.BubbleType);
-                    clearResult.PoppedBubbles.Add(this.ActiveBubble);
-                    break;
-
-                case GameBoard.PaintType:
-                    if (collidedWith.BubbleType >= 0)
-                        this.GameBoard.ActivatePaint(collidedWith, collidedWith);
-                    clearResult.PoppedBubbles.Add(this.ActiveBubble);
-                    break;
-
-                default:
-                    wasSpecialAction = false;
-                    break;
-            }
-
-            if (!wasSpecialAction)
-            {
-                if (this.ActiveBubble.BubbleType < 0)
-                {
-                    clearResult = this.GameBoard.AddBubble(this.ActiveBubble, collidedWith);
-                }
-                else if (collidedWith.BubbleType == GameBoard.StarType)
-                {
-                    clearResult = this.GameBoard.ActivateStar(this.ActiveBubble.BubbleType);
-                    clearResult.PoppedBubbles.Add(collidedWith);
-                    this.GameBoard.Bubbles.Remove(collidedWith);
-                    clearResult.PoppedBubbles.Add(this.ActiveBubble);
-                }
-                else if (collidedWith.BubbleType == GameBoard.PaintType)
-                {
-                    this.GameBoard.ActivatePaint(collidedWith, this.ActiveBubble);
-                    clearResult.PoppedBubbles.Add(this.ActiveBubble);
-                    clearResult.PoppedBubbles.Add(collidedWith);
-                    this.GameBoard.Bubbles.Remove(collidedWith);
-                }
-                else if (collidedWith.BubbleType == GameBoard.MirrorType)
-                {
-                    this.GameBoard.TransformMirrorBubble(collidedWith, this.ActiveBubble);
-                    clearResult = this.GameBoard.CheckForMatches(collidedWith);
-                    clearResult.PoppedBubbles.Add(this.ActiveBubble);
-                }
-                else
-                {
-                    clearResult = this.GameBoard.AddBubble(this.ActiveBubble, collidedWith);
-                }
-            }
-
+            var clearResult = ProcessBubbleCollision(this.ActiveBubble, collidedWith);
             this.ActiveBubble = null;
             HandleClearResult(clearResult);
         }
+    }
+
+    private ClearResult ProcessBubbleCollision(Bubble activeBubble, Bubble collidedWith)
+    {
+        if (this.GameBoard == null) return new ClearResult();
+
+        ClearResult clearResult = new ClearResult();
+        bool wasSpecialAction = true;
+
+        switch (activeBubble.BubbleType)
+        {
+            case GameBoard.StarType:
+                if (collidedWith.BubbleType >= 0)
+                    clearResult = this.GameBoard.ActivateStar(collidedWith.BubbleType);
+                clearResult.PoppedBubbles.Add(activeBubble);
+                break;
+            case GameBoard.PaintType:
+                if (collidedWith.BubbleType >= 0)
+                    this.GameBoard.ActivatePaint(collidedWith, collidedWith);
+                clearResult.PoppedBubbles.Add(activeBubble);
+                break;
+            default:
+                wasSpecialAction = false;
+                break;
+        }
+
+        if (!wasSpecialAction)
+        {
+            if (activeBubble.BubbleType < 0)
+            {
+                clearResult = this.GameBoard.AddBubble(activeBubble, collidedWith);
+            }
+            else if (collidedWith.BubbleType == GameBoard.StarType)
+            {
+                clearResult = this.GameBoard.ActivateStar(activeBubble.BubbleType);
+                if (this.GameBoard.Bubbles.Remove(collidedWith))
+                    clearResult.PoppedBubbles.Add(collidedWith);
+                clearResult.PoppedBubbles.Add(activeBubble);
+            }
+            else if (collidedWith.BubbleType == GameBoard.PaintType)
+            {
+                this.GameBoard.ActivatePaint(collidedWith, activeBubble);
+                clearResult.PoppedBubbles.Add(activeBubble);
+                if (this.GameBoard.Bubbles.Remove(collidedWith))
+                    clearResult.PoppedBubbles.Add(collidedWith);
+            }
+            else if (collidedWith.BubbleType == GameBoard.MirrorType)
+            {
+                this.GameBoard.TransformMirrorBubble(collidedWith, activeBubble);
+                clearResult = this.GameBoard.CheckForMatches(collidedWith);
+                clearResult.PoppedBubbles.Add(activeBubble);
+            }
+            else
+            {
+                clearResult = this.GameBoard.AddBubble(activeBubble, collidedWith);
+            }
+        }
+
+        return clearResult;
     }
 
     private void HandleCeilingAdvance()
@@ -373,7 +284,6 @@ public class GameSession
     {
         if (this.GameBoard == null || clearResult == null) return;
 
-        // Multiplayer: Send attack if conditions are met
         if (IsMultiplayerMode && clearResult.DroppedBubbles.Count > 3 && networkManager != null)
         {
             _ = networkManager.SendAttackData(clearResult.DroppedBubbles.Count);
@@ -403,8 +313,8 @@ public class GameSession
         {
             this.IsHelperLineActiveForStage = true;
             var powerUpBubble = clearResult.PoppedBubbles.FirstOrDefault(b => b.BubbleType == GameBoard.PowerUpType);
-            var textPos = powerUpBubble?.Position ?? new Vector2(MainWindow.ScaledWindowSize.X / 2, MainWindow.ScaledWindowSize.Y / 2);
-            this.ActiveTextAnimations.Add(new TextAnimation("Aiming Helper!", textPos, ImGui.GetColorU32(new Vector4(0.7f, 0.4f, 1f, 1f)), 2.5f, TextAnimationType.FadeOut, 1.8f));
+            var textPos = powerUpBubble?.Position ?? new Vector2(this.GameBoard.AbstractWidth / 2f, this.GameBoard.AbstractHeight / 2f);
+            this.ActiveTextAnimations.Add(new TextAnimation("Aiming Helper!", textPos, 4289864447, 2.5f, TextAnimationType.FadeOut, 1.8f));
         }
 
         if (clearResult.PoppedBubbles.Any())
@@ -420,15 +330,15 @@ public class GameSession
         {
             this.ActiveBubbleAnimations.Add(new BubbleAnimation(clearResult.DroppedBubbles, BubbleAnimationType.Drop, 1.5f));
             this.audioManager.PlaySfx("drop.wav");
-            foreach (var b in clearResult.DroppedBubbles) this.ActiveTextAnimations.Add(new TextAnimation("+20", b.Position, ImGui.GetColorU32(new Vector4(1, 1, 0.5f, 1)), 0.7f, TextAnimationType.FloatAndFade));
+            foreach (var b in clearResult.DroppedBubbles) this.ActiveTextAnimations.Add(new TextAnimation("+20", b.Position, 4280252415, 0.7f, TextAnimationType.FloatAndFade));
         }
-        foreach (var b in clearResult.PoppedBubbles) this.ActiveTextAnimations.Add(new TextAnimation("+10", b.Position, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)), 0.7f, TextAnimationType.FloatAndFade));
+        foreach (var b in clearResult.PoppedBubbles) this.ActiveTextAnimations.Add(new TextAnimation("+10", b.Position, 4294967295, 0.7f, TextAnimationType.FloatAndFade));
 
         if (clearResult.ComboMultiplier > 1)
         {
             var droppedPositions = clearResult.DroppedBubbles.Select(b => b.Position).ToList();
             var bonusPosition = droppedPositions.Aggregate(Vector2.Zero, (acc, p) => acc + p) / droppedPositions.Count;
-            this.ActiveTextAnimations.Add(new TextAnimation($"x{clearResult.ComboMultiplier} COMBO!", bonusPosition, ImGui.GetColorU32(new Vector4(1f, 0.6f, 0f, 1f)), 2.5f, TextAnimationType.FadeOut, 1.8f));
+            this.ActiveTextAnimations.Add(new TextAnimation($"x{clearResult.ComboMultiplier} COMBO!", bonusPosition, 4280193279, 2.5f, TextAnimationType.FadeOut, 1.8f));
         }
 
         if (this.GameBoard.AreAllColoredBubblesCleared())
@@ -439,15 +349,14 @@ public class GameSession
         }
     }
 
-    public void FireBubble(Vector2 direction, Vector2 launcherPosition, Vector2 windowPos)
+    public void FireBubble(Vector2 direction, Vector2 abstractStartPosition)
     {
         if (this.NextBubble == null) return;
-
         this.audioManager.PlaySfx("fire.wav");
 
         this.ActiveBubble = this.NextBubble;
-        this.ActiveBubble.Position = launcherPosition - windowPos;
-        this.ActiveBubble.Velocity = direction * this.bubbleSpeed;
+        this.ActiveBubble.Position = abstractStartPosition;
+        this.ActiveBubble.Velocity = direction * BubbleSpeed;
 
         if (this.ActiveBubble.BubbleType >= 0)
         {
@@ -456,11 +365,9 @@ public class GameSession
             this.shotsSincePaint++;
             this.shotsSinceMirror++;
         }
-
         this.NextBubble = CreateRandomBubble();
         this.ShotsUntilDrop--;
         this.TimeUntilDrop = this.maxTimeForStage;
-
         if (this.ShotsUntilDrop <= 0)
         {
             HandleCeilingAdvance();
@@ -470,34 +377,31 @@ public class GameSession
 
     private Bubble CreateRandomBubble()
     {
+        if (this.GameBoard == null) return new Bubble(Vector2.Zero, Vector2.Zero, 1.0f, 4280221439, 0);
+
         if (this.CurrentStage >= 11 && this.shotsSinceMirror >= ShotsPerMirror)
         {
             this.shotsSinceMirror = 0;
-            return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, ImGui.GetColorU32(new Vector4(0.8f, 0.9f, 0.95f, 1f)), GameBoard.MirrorType);
+            var details = this.GameBoard.GetBubbleDetails(GameBoard.MirrorType);
+            return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, details.Color, details.Type);
         }
-
         if (this.CurrentStage >= 7 && this.shotsSinceStar >= ShotsPerStar)
         {
             this.shotsSinceStar = 0;
-            return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, ImGui.GetColorU32(new Vector4(1f, 0.85f, 0.2f, 1f)), GameBoard.StarType);
+            var details = this.GameBoard.GetBubbleDetails(GameBoard.StarType);
+            return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, details.Color, details.Type);
         }
-
         if (this.CurrentStage >= 9 && this.shotsSincePaint >= ShotsPerPaint)
         {
             this.shotsSincePaint = 0;
-            return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, ImGui.GetColorU32(new Vector4(0.9f, 0.5f, 1f, 1f)), GameBoard.PaintType);
+            var details = this.GameBoard.GetBubbleDetails(GameBoard.PaintType);
+            return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, details.Color, details.Type);
         }
-
         if (this.CurrentStage >= 5 && this.shotsSinceBomb >= ShotsPerBomb)
         {
             this.shotsSinceBomb = 0;
-            return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, ImGui.GetColorU32(new Vector4(0.9f, 0.4f, 0.1f, 1.0f)), GameBoard.BombType);
-        }
-
-        if (this.GameBoard == null)
-        {
-            var radius = this.currentBubbleRadius > 0 ? this.currentBubbleRadius : (30f * ImGuiHelpers.GlobalScale);
-            return new Bubble(Vector2.Zero, Vector2.Zero, radius, ImGui.GetColorU32(new Vector4(1.0f, 0.2f, 0.2f, 1.0f)), 0);
+            var details = this.GameBoard.GetBubbleDetails(GameBoard.BombType);
+            return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, details.Color, details.Type);
         }
 
         var bubbleTypes = this.GameBoard.GetAvailableBubbleTypesOnBoard();
@@ -508,7 +412,6 @@ public class GameSession
     public void SaveState()
     {
         if (this.CurrentGameState != GameState.InGame || this.GameBoard == null) return;
-
         var savedGame = new SavedGame
         {
             Score = this.Score,
@@ -536,16 +439,16 @@ public class GameSession
         if (this.GameBoard != null)
         {
             this.GameBoard.Bubbles.Clear();
+            var bubbleRadius = this.GameBoard.GetBubbleRadius();
             foreach (var sb in savedGame.Bubbles)
             {
                 var bubbleTypeDetails = this.GameBoard.GetBubbleDetails(sb.BubbleType);
-                this.GameBoard.Bubbles.Add(new Bubble(sb.Position, Vector2.Zero, this.currentBubbleRadius, bubbleTypeDetails.Color, bubbleTypeDetails.Type));
+                this.GameBoard.Bubbles.Add(new Bubble(sb.Position, Vector2.Zero, bubbleRadius, bubbleTypeDetails.Color, bubbleTypeDetails.Type));
             }
-
             if (savedGame.NextBubble != null)
             {
                 var nextBubbleDetails = this.GameBoard.GetBubbleDetails(savedGame.NextBubble.BubbleType);
-                this.NextBubble = new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, nextBubbleDetails.Color, nextBubbleDetails.Type);
+                this.NextBubble = new Bubble(Vector2.Zero, Vector2.Zero, bubbleRadius, nextBubbleDetails.Color, nextBubbleDetails.Type);
             }
         }
     }

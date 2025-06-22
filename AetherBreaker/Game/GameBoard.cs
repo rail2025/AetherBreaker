@@ -2,27 +2,30 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using AetherBreaker.Windows;
-using Dalamud.Interface;
-using Dalamud.Interface.Utility;
-using ImGuiNET;
 
 namespace AetherBreaker.Game;
 
+/// <summary>
+/// Manages the state and layout of the bubble grid using an abstract, unit-based coordinate system.
+/// This class has no knowledge of pixels or UI scaling.
+/// </summary>
 public class GameBoard
 {
     public List<Bubble> Bubbles { get; private set; } = new();
 
-    private readonly float bubbleRadius;
-    private readonly float gridSpacing;
-    private float ceilingY;
-    private readonly Random random = new();
+    // The abstract, unscaled dimensions of the game board.
+    public float AbstractWidth { get; private set; }
+    public float AbstractHeight { get; private set; }
+
+    // Internal abstract units.
+    private const float BubbleRadius = 1.0f;
+    private const float GridSpacing = 2.0f;
 
     private readonly int gameBoardWidthInBubbles;
-    private readonly float gameOverLineY;
     private readonly (uint Color, int Type)[] allBubbleColorTypes;
-    private readonly float boardWidth;
 
+    private float ceilingY;
+    private readonly Random random = new();
     public readonly Bubble CeilingBubble;
 
     public const int PowerUpType = -2;
@@ -32,199 +35,65 @@ public class GameBoard
     public const int MirrorType = -6;
     public const int ChestType = -7;
 
-    public GameBoard(float radius)
+    public GameBoard(int stage)
     {
-        this.bubbleRadius = radius;
-        this.gridSpacing = this.bubbleRadius * 2;
         this.CeilingBubble = new Bubble(Vector2.Zero, Vector2.Zero, 0, 0, -99);
 
-        if (this.bubbleRadius > 35f * ImGuiHelpers.GlobalScale) this.gameBoardWidthInBubbles = 7;
-        else if (this.bubbleRadius < 25f * ImGuiHelpers.GlobalScale) this.gameBoardWidthInBubbles = 11;
+        if (stage <= 2) this.gameBoardWidthInBubbles = 7;
+        else if (stage >= 10) this.gameBoardWidthInBubbles = 11;
         else this.gameBoardWidthInBubbles = 8;
 
-        this.boardWidth = (this.gameBoardWidthInBubbles * this.gridSpacing) - this.bubbleRadius;
-        this.gameOverLineY = MainWindow.ScaledWindowSize.Y - (120f * ImGuiHelpers.GlobalScale);
+        this.AbstractWidth = this.gameBoardWidthInBubbles * GridSpacing;
 
         this.allBubbleColorTypes = new[]
         {
-            (Color: ImGui.GetColorU32(new Vector4(1.0f, 0.2f, 0.2f, 1.0f)), Type: 0),
-            (Color: ImGui.GetColorU32(new Vector4(0.2f, 1.0f, 0.2f, 1.0f)), Type: 1),
-            (Color: ImGui.GetColorU32(new Vector4(0.2f, 0.2f, 1.0f, 1.0f)), Type: 2),
-            (Color: ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 0.2f, 1.0f)), Type: 3)
+            (Color: 4280221439, Type: 0), // Red
+            (Color: 4280123647, Type: 1), // Green
+            (Color: 4294901760, Type: 2), // Blue
+            (Color: 4280252415, Type: 3)  // Yellow
         };
     }
 
     public void InitializeBoard(int stage)
     {
         this.Bubbles.Clear();
-        this.ceilingY = this.bubbleRadius;
+        this.ceilingY = BubbleRadius;
         var tempBubbles = new List<Bubble>();
-        var padding = (MainWindow.ScaledWindowSize.X - this.boardWidth) / 2f;
 
         var numRows = 5;
-        if (this.bubbleRadius > 35f * ImGuiHelpers.GlobalScale) numRows = 4;
-        else if (this.bubbleRadius < 25f * ImGuiHelpers.GlobalScale) numRows = 6;
-
-        if (stage >= 20)
-        {
-            numRows += 2;
-        }
+        if (this.gameBoardWidthInBubbles == 7) numRows = 4;
+        else if (this.gameBoardWidthInBubbles == 11) numRows = 6;
+        if (stage >= 20) numRows += 2;
 
         for (var row = 0; row < numRows; row++)
         {
-            for (var col = 0; col < (this.gameBoardWidthInBubbles - (row % 2)); col++)
+            int bubblesInThisRow = this.gameBoardWidthInBubbles - (row % 2);
+            for (var col = 0; col < bubblesInThisRow; col++)
             {
-                var x = padding + col * this.gridSpacing + (row % 2 == 1 ? this.bubbleRadius : 0);
-                var y = row * (this.gridSpacing * 0.866f) + this.ceilingY;
+                var x = (col * GridSpacing) + BubbleRadius + (row % 2 == 1 ? BubbleRadius : 0);
+                var y = row * (GridSpacing * 0.866f) + this.ceilingY;
                 var bubbleType = this.allBubbleColorTypes[this.random.Next(this.allBubbleColorTypes.Length)];
-                tempBubbles.Add(new Bubble(new Vector2(x, y), Vector2.Zero, this.bubbleRadius, bubbleType.Color, bubbleType.Type));
+                tempBubbles.Add(new Bubble(new Vector2(x, y), Vector2.Zero, BubbleRadius, bubbleType.Color, bubbleType.Type));
             }
         }
 
-        if (stage >= 3)
-        {
-            var middleRowY = (2 * (this.gridSpacing * 0.866f)) + this.ceilingY;
-            var lowerHalfCandidates = tempBubbles.Where(b => b.Position.Y > middleRowY).ToList();
-            if (lowerHalfCandidates.Any())
-            {
-                var powerUpCandidateIndex = this.random.Next(lowerHalfCandidates.Count);
-                var powerUpBubble = lowerHalfCandidates[powerUpCandidateIndex];
-                var originalIndex = tempBubbles.IndexOf(powerUpBubble);
-                if (originalIndex != -1)
-                {
-                    powerUpBubble.BubbleType = PowerUpType;
-                    powerUpBubble.Color = ImGui.GetColorU32(new Vector4(0.5f, 0.2f, 1.0f, 1.0f));
-                    tempBubbles[originalIndex] = powerUpBubble;
-                }
-            }
+        this.AbstractHeight = (numRows - 1) * (GridSpacing * 0.866f) + (2 * BubbleRadius);
 
-            var bubblesToConvert = (int)(tempBubbles.Count * 0.15f);
-            var leftBoundary = padding + this.gridSpacing;
-            var rightBoundary = padding + this.boardWidth - this.gridSpacing;
-            var blackBubblePositions = new List<Vector2>();
-
-            for (int i = 0; i < bubblesToConvert; i++)
-            {
-                int attempts = 0;
-                while (attempts < 20)
-                {
-                    attempts++;
-                    var candidate = tempBubbles[this.random.Next(tempBubbles.Count)];
-                    if (candidate.BubbleType < 0 || candidate.Position.X <= leftBoundary || candidate.Position.X >= rightBoundary) continue;
-                    bool tooClose = blackBubblePositions.Any(pos => Vector2.Distance(candidate.Position, pos) < this.gridSpacing * 2.0f);
-                    if (tooClose) continue;
-
-                    candidate.BubbleType = -1;
-                    candidate.Color = ImGui.GetColorU32(new Vector4(0.1f, 0.1f, 0.1f, 1.0f));
-                    blackBubblePositions.Add(candidate.Position);
-                    break;
-                }
-            }
-        }
-
-        if (stage >= 5)
-        {
-            int numBombs = stage >= 10 ? 3 : this.random.Next(1, 3);
-            var bombCandidates = tempBubbles.Where(b => b.BubbleType >= 0).ToList();
-
-            for (int i = 0; i < numBombs && bombCandidates.Any(); i++)
-            {
-                int candidateIndex = this.random.Next(bombCandidates.Count);
-                var bombBubble = bombCandidates[candidateIndex];
-                bombCandidates.RemoveAt(candidateIndex);
-
-                bombBubble.BubbleType = BombType;
-                bombBubble.Color = ImGui.GetColorU32(new Vector4(0.9f, 0.4f, 0.1f, 1.0f));
-            }
-        }
-
-        if (stage >= 7 && (stage - 7) % 6 == 0)
-        {
-            var starCandidates = tempBubbles.Where(b => b.BubbleType >= 0).ToList();
-            if (starCandidates.Any())
-            {
-                var starBubble = starCandidates[this.random.Next(starCandidates.Count)];
-                starBubble.BubbleType = StarType;
-                starBubble.Color = ImGui.GetColorU32(new Vector4(1f, 0.85f, 0.2f, 1f));
-            }
-        }
-
-        if (stage >= 9)
-        {
-            var paintCandidates = tempBubbles.Where(b => b.BubbleType >= 0).ToList();
-            for (int i = 0; i < 2 && paintCandidates.Any(); i++)
-            {
-                int candidateIndex = this.random.Next(paintCandidates.Count);
-                var paintBubble = paintCandidates[candidateIndex];
-                paintCandidates.RemoveAt(candidateIndex);
-
-                paintBubble.BubbleType = PaintType;
-                paintBubble.Color = ImGui.GetColorU32(new Vector4(0.9f, 0.5f, 1f, 1f));
-            }
-        }
-
-        if (stage >= 11)
-        {
-            var mirrorCandidates = tempBubbles.Where(b => b.BubbleType >= 0).ToList();
-            for (int i = 0; i < 5 && mirrorCandidates.Any(); i++)
-            {
-                int candidateIndex = this.random.Next(mirrorCandidates.Count);
-                var mirrorBubble = mirrorCandidates[candidateIndex];
-                mirrorCandidates.RemoveAt(candidateIndex);
-
-                mirrorBubble.BubbleType = MirrorType;
-                mirrorBubble.Color = ImGui.GetColorU32(new Vector4(0.8f, 0.9f, 0.95f, 1f));
-            }
-        }
-
+        AddSpecialBubblesToBoard(stage, tempBubbles);
         this.Bubbles = tempBubbles;
     }
 
-    public void AddJunkRows(int rowCount)
+    public Vector2 GetSnappedPosition(Vector2 landingPosition, Bubble? collidedWith)
     {
-        if (rowCount <= 0) return;
-
-        float yOffset = rowCount * (this.gridSpacing * 0.866f);
-
-        // Shift all existing bubbles down
-        foreach (var bubble in this.Bubbles)
-        {
-            bubble.Position.Y += yOffset;
-        }
-
-        // Add new junk rows at the top
-        var padding = (MainWindow.ScaledWindowSize.X - this.boardWidth) / 2f;
-        for (var row = 0; row < rowCount; row++)
-        {
-            for (var col = 0; col < (this.gameBoardWidthInBubbles - (row % 2)); col++)
-            {
-                var x = padding + col * this.gridSpacing + (row % 2 == 1 ? this.bubbleRadius : 0);
-                var y = (row * (this.gridSpacing * 0.866f)) + this.ceilingY;
-                var junkBubble = new Bubble(new Vector2(x, y), Vector2.Zero, this.bubbleRadius, ImGui.GetColorU32(new Vector4(0.5f, 0.5f, 0.5f, 1.0f)), -1);
-                this.Bubbles.Add(junkBubble);
-            }
-        }
-    }
-
-    public void DrawBoardChrome(ImDrawListPtr drawList, Vector2 windowPos)
-    {
-        var padding = (MainWindow.ScaledWindowSize.X - this.boardWidth) / 2f;
-        var ceilingLineY = windowPos.Y + this.ceilingY - this.bubbleRadius;
-        drawList.AddLine(new Vector2(windowPos.X + padding - this.bubbleRadius, ceilingLineY), new Vector2(windowPos.X + this.boardWidth + padding + this.bubbleRadius, ceilingLineY), ImGui.GetColorU32(new Vector4(1, 1, 1, 0.5f)), 1f * ImGuiHelpers.GlobalScale);
-        drawList.AddLine(windowPos + new Vector2(0, this.gameOverLineY), windowPos + new Vector2(MainWindow.ScaledWindowSize.X, this.gameOverLineY), ImGui.GetColorU32(new Vector4(1, 0, 0, 0.5f)), 2f * ImGuiHelpers.GlobalScale);
-    }
-
-    private Vector2 SnapToGridOnCollision(Vector2 landingPosition, Bubble? collidedWith)
-    {
-        var nearbyBubbles = this.Bubbles.Where(b => Vector2.Distance(b.Position, landingPosition) < this.gridSpacing * 1.5f);
-
+        var nearbyBubbles = this.Bubbles.Where(b => Vector2.Distance(b.Position, landingPosition) < GridSpacing * 1.5f);
         var closestBubble = collidedWith ?? nearbyBubbles.OrderBy(b => Vector2.Distance(b.Position, landingPosition)).FirstOrDefault();
 
         if (closestBubble == null || closestBubble == this.CeilingBubble)
         {
-            var padding = (MainWindow.ScaledWindowSize.X - this.boardWidth) / 2f;
-            var x = (float)Math.Round((landingPosition.X - padding) / this.gridSpacing) * this.gridSpacing + padding;
-            return new Vector2(x, this.ceilingY);
+            var gridX = (float)Math.Round((landingPosition.X - BubbleRadius) / GridSpacing);
+            int row = (int)Math.Round((landingPosition.Y - this.ceilingY) / (GridSpacing * 0.866f));
+            var x = (gridX * GridSpacing) + BubbleRadius + (row % 2 == 1 ? BubbleRadius : 0);
+            return new Vector2(x, landingPosition.Y); // Snap X, keep Y for ceiling collision check
         }
 
         Vector2 bestPosition = landingPosition;
@@ -232,9 +101,8 @@ public class GameBoard
         for (int i = 0; i < 6; i++)
         {
             var angle = MathF.PI / 3f * i;
-            var neighborPos = closestBubble.Position + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * this.gridSpacing;
-
-            if (!this.Bubbles.Any(b => Vector2.Distance(b.Position, neighborPos) < this.gridSpacing * 0.9f))
+            var neighborPos = closestBubble.Position + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * GridSpacing;
+            if (!this.Bubbles.Any(b => Vector2.Distance(b.Position, neighborPos) < GridSpacing * 0.9f))
             {
                 float dist = Vector2.Distance(landingPosition, neighborPos);
                 if (dist < closestDist)
@@ -247,10 +115,35 @@ public class GameBoard
         return bestPosition;
     }
 
+    public void AddJunkRows(int rowCount)
+    {
+        if (rowCount <= 0) return;
+        float yOffset = rowCount * (GridSpacing * 0.866f);
+        foreach (var bubble in this.Bubbles)
+        {
+            bubble.Position.Y += yOffset;
+        }
+        this.ceilingY += yOffset;
+        this.AbstractHeight += yOffset;
+
+        for (var row = 0; row < rowCount; row++)
+        {
+            int bubblesInThisRow = this.gameBoardWidthInBubbles - (row % 2);
+            for (var col = 0; col < bubblesInThisRow; col++)
+            {
+                var x = (col * GridSpacing) + BubbleRadius + (row % 2 == 1 ? BubbleRadius : 0);
+                var y = (row * (GridSpacing * 0.866f)) + BubbleRadius;
+                var junkBubble = new Bubble(new Vector2(x, y), Vector2.Zero, BubbleRadius, 4283552895, -1);
+                this.Bubbles.Add(junkBubble);
+            }
+        }
+    }
+
     public List<Bubble> AdvanceCeiling()
     {
-        var dropDistance = this.bubbleRadius;
+        var dropDistance = GridSpacing * 0.866f;
         this.ceilingY += dropDistance;
+        this.AbstractHeight += dropDistance;
         foreach (var bubble in this.Bubbles)
             bubble.Position.Y += dropDistance;
         return RemoveDisconnectedBubbles();
@@ -260,15 +153,13 @@ public class GameBoard
     {
         if (activeBubble.Position.Y - activeBubble.Radius <= this.ceilingY)
             return this.CeilingBubble;
-
-        return this.Bubbles.FirstOrDefault(bubble => Vector2.Distance(activeBubble.Position, bubble.Position) < this.gridSpacing);
+        return this.Bubbles.FirstOrDefault(bubble => Vector2.Distance(activeBubble.Position, bubble.Position) < GridSpacing);
     }
 
     public List<Bubble> DetonateBomb(Vector2 bombPosition)
     {
-        var blastRadius = this.gridSpacing * 2f;
+        var blastRadius = GridSpacing * 2f;
         var clearedBubbles = new List<Bubble>();
-
         for (int i = this.Bubbles.Count - 1; i >= 0; i--)
         {
             var bubble = this.Bubbles[i];
@@ -283,9 +174,8 @@ public class GameBoard
 
     public ClearResult AddBubble(Bubble bubble, Bubble? collidedWith)
     {
-        bubble.Position = SnapToGridOnCollision(bubble.Position, collidedWith);
+        bubble.Position = GetSnappedPosition(bubble.Position, collidedWith);
         bubble.Velocity = Vector2.Zero;
-
         if (bubble.BubbleType == BombType)
         {
             this.Bubbles.Add(bubble);
@@ -295,7 +185,6 @@ public class GameBoard
             result.CalculateScore();
             return result;
         }
-
         this.Bubbles.Add(bubble);
         return CheckForMatches(bubble);
     }
@@ -309,11 +198,9 @@ public class GameBoard
             var neighbors = connected.SelectMany(GetNeighbors).Distinct().ToList();
             var bystanderBombs = neighbors.Where(n => n.BubbleType == BombType).ToList();
             var bystanderPowerUps = neighbors.Where(n => n.BubbleType == PowerUpType).ToList();
-
             foreach (var bubble in connected)
                 this.Bubbles.Remove(bubble);
             result.PoppedBubbles.AddRange(connected);
-
             if (bystanderPowerUps.Any())
             {
                 result.HelperLineActivated = true;
@@ -325,7 +212,6 @@ public class GameBoard
                     }
                 }
             }
-
             if (bystanderBombs.Any())
             {
                 foreach (var bomb in bystanderBombs)
@@ -337,7 +223,6 @@ public class GameBoard
                     }
                 }
             }
-
             result.DroppedBubbles.AddRange(RemoveDisconnectedBubbles());
             result.CalculateScore();
         }
@@ -349,7 +234,7 @@ public class GameBoard
         if (!this.Bubbles.Any()) return new List<Bubble>();
         var connectedToCeiling = new HashSet<Bubble>();
         var queue = new Queue<Bubble>();
-        foreach (var bubble in this.Bubbles.Where(b => b.Position.Y - b.Radius <= this.ceilingY))
+        foreach (var bubble in this.Bubbles.Where(b => b.Position.Y - b.Radius <= this.ceilingY * 1.1f))
         {
             if (connectedToCeiling.Add(bubble)) queue.Enqueue(bubble);
         }
@@ -386,10 +271,8 @@ public class GameBoard
 
     public IEnumerable<Bubble> GetNeighbors(Bubble bubble)
     {
-        return this.Bubbles.Where(other => bubble != other && Vector2.Distance(bubble.Position, other.Position) <= this.gridSpacing * 1.1f);
+        return this.Bubbles.Where(other => bubble != other && Vector2.Distance(bubble.Position, other.Position) <= GridSpacing * 1.1f);
     }
-
-    public bool IsGameOver() => this.Bubbles.Any(bubble => bubble.Position.Y + this.bubbleRadius >= this.gameOverLineY);
 
     public bool AreAllColoredBubblesCleared() => !this.Bubbles.Any(b => b.BubbleType >= 0);
 
@@ -399,6 +282,8 @@ public class GameBoard
         var availableColors = this.allBubbleColorTypes.Where(c => activeTypes.Contains(c.Type)).ToArray();
         return availableColors.Any() ? availableColors : this.allBubbleColorTypes;
     }
+
+    public float GetBubbleRadius() => BubbleRadius;
 
     public List<Bubble> ClearBubblesByType(int bubbleType)
     {
@@ -413,13 +298,9 @@ public class GameBoard
     public ClearResult ActivateStar(int colorType)
     {
         var result = new ClearResult();
-
         result.PoppedBubbles.AddRange(ClearBubblesByType(colorType));
-
         result.DroppedBubbles.AddRange(RemoveDisconnectedBubbles());
-
         result.CalculateScore();
-
         return result;
     }
 
@@ -427,9 +308,7 @@ public class GameBoard
     {
         var targetType = colorSourceBubble.BubbleType;
         var targetColor = colorSourceBubble.Color;
-
         if (targetType < 0) return;
-
         var neighbors = GetNeighbors(locationBubble);
         foreach (var neighbor in neighbors)
         {
@@ -444,7 +323,6 @@ public class GameBoard
     public void TransformMirrorBubble(Bubble mirrorBubble, Bubble colorSourceBubble)
     {
         if (colorSourceBubble.BubbleType < 0) return;
-
         mirrorBubble.BubbleType = colorSourceBubble.BubbleType;
         mirrorBubble.Color = colorSourceBubble.Color;
     }
@@ -453,30 +331,97 @@ public class GameBoard
     {
         foreach (var details in this.allBubbleColorTypes)
         {
-            if (details.Type == bubbleType)
-            {
-                return details;
-            }
+            if (details.Type == bubbleType) return details;
         }
-
         switch (bubbleType)
         {
-            case PowerUpType:
-                return (ImGui.GetColorU32(new Vector4(0.5f, 0.2f, 1.0f, 1.0f)), PowerUpType);
-            case BombType:
-                return (ImGui.GetColorU32(new Vector4(0.9f, 0.4f, 0.1f, 1.0f)), BombType);
-            case StarType:
-                return (ImGui.GetColorU32(new Vector4(1f, 0.85f, 0.2f, 1f)), StarType);
-            case PaintType:
-                return (ImGui.GetColorU32(new Vector4(0.9f, 0.5f, 1f, 1f)), PaintType);
-            case MirrorType:
-                return (ImGui.GetColorU32(new Vector4(0.8f, 0.9f, 0.95f, 1f)), MirrorType);
-            case ChestType:
-                return (ImGui.GetColorU32(new Vector4(0.6f, 0.4f, 0.2f, 1.0f)), ChestType);
-            case -1: // Black Bubble
-                return (ImGui.GetColorU32(new Vector4(0.1f, 0.1f, 0.1f, 1.0f)), -1);
-            default:
-                return (this.allBubbleColorTypes[0].Color, this.allBubbleColorTypes[0].Type);
+            case PowerUpType: return (4289864447, PowerUpType);
+            case BombType: return (4280153855, BombType);
+            case StarType: return (4280252159, StarType);
+            case PaintType: return (4294934527, PaintType);
+            case MirrorType: return (4294309324, MirrorType);
+            case ChestType: return (4282343014, ChestType);
+            case -1: return (4280197401, -1);
+            default: return (this.allBubbleColorTypes[0].Color, this.allBubbleColorTypes[0].Type);
+        }
+    }
+
+    private void AddSpecialBubblesToBoard(int stage, List<Bubble> tempBubbles)
+    {
+        if (stage >= 3)
+        {
+            var middleRowY = (2 * (GridSpacing * 0.866f)) + this.ceilingY;
+            var lowerHalfCandidates = tempBubbles.Where(b => b.Position.Y > middleRowY).ToList();
+            if (lowerHalfCandidates.Any())
+            {
+                var powerUpBubble = lowerHalfCandidates[this.random.Next(lowerHalfCandidates.Count)];
+                powerUpBubble.BubbleType = PowerUpType;
+                powerUpBubble.Color = GetBubbleDetails(PowerUpType).Color;
+            }
+
+            var bubblesToConvert = (int)(tempBubbles.Count * 0.15f);
+            var leftBoundary = GridSpacing;
+            var rightBoundary = this.AbstractWidth - GridSpacing;
+            var blackBubblePositions = new List<Vector2>();
+            for (int i = 0; i < bubblesToConvert; i++)
+            {
+                int attempts = 0;
+                while (attempts < 20)
+                {
+                    attempts++;
+                    var candidate = tempBubbles[this.random.Next(tempBubbles.Count)];
+                    if (candidate.BubbleType < 0 || candidate.Position.X <= leftBoundary || candidate.Position.X >= rightBoundary) continue;
+                    if (blackBubblePositions.Any(pos => Vector2.Distance(candidate.Position, pos) < GridSpacing * 2.0f)) continue;
+                    candidate.BubbleType = -1;
+                    candidate.Color = GetBubbleDetails(-1).Color;
+                    blackBubblePositions.Add(candidate.Position);
+                    break;
+                }
+            }
+        }
+        if (stage >= 5)
+        {
+            int numBombs = stage >= 10 ? 3 : this.random.Next(1, 3);
+            var bombCandidates = tempBubbles.Where(b => b.BubbleType >= 0).ToList();
+            for (int i = 0; i < numBombs && bombCandidates.Any(); i++)
+            {
+                var bombBubble = bombCandidates[this.random.Next(bombCandidates.Count)];
+                bombCandidates.Remove(bombBubble);
+                bombBubble.BubbleType = BombType;
+                bombBubble.Color = GetBubbleDetails(BombType).Color;
+            }
+        }
+        if (stage >= 7 && (stage - 7) % 6 == 0)
+        {
+            var starCandidates = tempBubbles.Where(b => b.BubbleType >= 0).ToList();
+            if (starCandidates.Any())
+            {
+                var starBubble = starCandidates[this.random.Next(starCandidates.Count)];
+                starBubble.BubbleType = StarType;
+                starBubble.Color = GetBubbleDetails(StarType).Color;
+            }
+        }
+        if (stage >= 9)
+        {
+            var paintCandidates = tempBubbles.Where(b => b.BubbleType >= 0).ToList();
+            for (int i = 0; i < 2 && paintCandidates.Any(); i++)
+            {
+                var paintBubble = paintCandidates[this.random.Next(paintCandidates.Count)];
+                paintCandidates.Remove(paintBubble);
+                paintBubble.BubbleType = PaintType;
+                paintBubble.Color = GetBubbleDetails(PaintType).Color;
+            }
+        }
+        if (stage >= 11)
+        {
+            var mirrorCandidates = tempBubbles.Where(b => b.BubbleType >= 0).ToList();
+            for (int i = 0; i < 5 && mirrorCandidates.Any(); i++)
+            {
+                var mirrorBubble = mirrorCandidates[this.random.Next(mirrorCandidates.Count)];
+                mirrorCandidates.Remove(mirrorBubble);
+                mirrorBubble.BubbleType = MirrorType;
+                mirrorBubble.Color = GetBubbleDetails(MirrorType).Color;
+            }
         }
     }
 }

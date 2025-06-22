@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Numerics;
 using AetherBreaker.Audio;
 using AetherBreaker.Game;
@@ -32,12 +33,12 @@ public static class UIManager
         var titleSize = ImGui.CalcTextSize(title) * titleFontSize;
         var titlePos = new Vector2(windowPos.X + (MainWindow.ScaledWindowSize.X - titleSize.X) * 0.5f, windowPos.Y + MainWindow.ScaledWindowSize.Y * 0.2f);
 
-        DrawTextWithOutline(drawList, title, titlePos, 0xFFFFFFFF, 0xFF000000, titleFontSize);
+        DrawTextWithOutline(drawList, title, titlePos, (uint)0xFFFFFFFF, (uint)0xFF000000, titleFontSize);
 
         var buttonSize = new Vector2(140, 40) * ImGuiHelpers.GlobalScale;
         var startY = MainWindow.ScaledWindowSize.Y * 0.45f;
-        uint buttonTextColor = 0xFFFFFFFF;
-        uint buttonOutlineColor = 0xFF000000;
+        uint buttonTextColor = (uint)0xFFFFFFFF;
+        uint buttonOutlineColor = (uint)0xFF000000;
 
         void DrawButtonWithOutline(string label, string id, Vector2 position, Vector2 size, Action onClick)
         {
@@ -75,133 +76,181 @@ public static class UIManager
 
     public static void DrawGameUI(
         ImDrawListPtr drawList,
-        Vector2 windowPos,
+        Vector2 hudAreaPos,
         GameSession session,
         Plugin plugin,
         AudioManager audioManager,
-        TextureManager textureManager)
+        TextureManager textureManager,
+        float availableWidth)
     {
         var globalScale = ImGuiHelpers.GlobalScale;
-        var hudY = MainWindow.ScaledWindowSize.Y - (MainWindow.HudAreaHeight * globalScale);
-        ImGui.SetCursorPos(new Vector2(0, hudY));
+
+        ImGui.SetCursorScreenPos(hudAreaPos);
         ImGui.Columns(3, "hudColumns", false);
 
         var leftColumnWidth = 220 * globalScale;
         var rightColumnWidth = 100 * globalScale;
+        var centerColumnWidth = availableWidth - leftColumnWidth - rightColumnWidth;
+
         ImGui.SetColumnWidth(0, leftColumnWidth);
+        ImGui.SetColumnWidth(1, centerColumnWidth);
         ImGui.SetColumnWidth(2, rightColumnWidth);
 
-        // --- Left Column ---
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 10 * globalScale);
         ImGui.BeginGroup();
 
-        if (session.IsMultiplayerMode)
+        ImGui.Text($"High Score: {plugin.Configuration.HighScore}");
+        ImGui.Text($"Score: {session.Score}");
+        ImGui.Text($"Stage: {session.CurrentStage}");
+
+        var settingsButtonSize = new Vector2(80, 25) * globalScale;
+        if (ImGui.Button("Settings", settingsButtonSize))
         {
-            // Multiplayer HUD
-            ImGui.Text($"YOU: {session.MyScore} | OPPONENT: {session.OpponentScore}");
-
-            string statusText = session.CurrentMatchState switch
-            {
-                GameSession.MultiplayerMatchState.WaitingForOpponent => "Waiting for opponent...",
-                GameSession.MultiplayerMatchState.RoundStarting => "Round Starting...",
-                GameSession.MultiplayerMatchState.RoundInProgress => "Round in Progress",
-                GameSession.MultiplayerMatchState.RoundOver => "Round Over",
-                GameSession.MultiplayerMatchState.MatchOver => "Match Over",
-                _ => "Connecting..."
-            };
-            ImGui.Text(statusText);
-
-            var disconnectButtonSize = new Vector2(100, 25) * globalScale;
-            if (ImGui.Button("Disconnect", disconnectButtonSize))
-            {
-                _ = plugin.NetworkManager.DisconnectAsync();
-            }
+            plugin.ToggleConfigUI();
         }
-        else
+        ImGui.SameLine();
+        ImGui.PushItemWidth(40 * globalScale);
+        var volume = plugin.Configuration.MusicVolume;
+        if (ImGui.SliderFloat("##MusicVol", ref volume, 0.0f, 1.0f, ""))
         {
-            // Single Player HUD
-            ImGui.Text($"High Score: {plugin.Configuration.HighScore}");
-            ImGui.Text($"Score: {session.Score}");
-            ImGui.Text($"Stage: {session.CurrentStage}");
-
-            var settingsButtonSize = new Vector2(80, 25) * globalScale;
-            if (ImGui.Button("Settings", settingsButtonSize))
-            {
-                plugin.ToggleConfigUI();
-            }
-            ImGui.SameLine();
-            ImGui.PushItemWidth(40 * globalScale);
-            var volume = plugin.Configuration.MusicVolume;
-            if (ImGui.SliderFloat("##MusicVol", ref volume, 0.0f, 1.0f, ""))
-            {
-                audioManager.SetMusicVolume(volume);
-                plugin.Configuration.MusicVolume = volume;
-                plugin.Configuration.Save();
-            }
-            ImGui.PopItemWidth();
-            ImGui.SameLine();
-            var isMuted = plugin.Configuration.IsBgmMuted;
-            if (ImGui.Checkbox("##Mute", ref isMuted))
-            {
-                plugin.Configuration.IsBgmMuted = isMuted;
-                plugin.Configuration.Save();
-                audioManager.UpdateBgmState();
-            }
-            ImGui.SameLine();
-            ImGui.Text("Mute");
+            audioManager.SetMusicVolume(volume);
+            plugin.Configuration.MusicVolume = volume;
+            plugin.Configuration.Save();
         }
+        ImGui.PopItemWidth();
+        ImGui.SameLine();
+        var isMuted = plugin.Configuration.IsBgmMuted;
+        if (ImGui.Checkbox("##Mute", ref isMuted))
+        {
+            plugin.Configuration.IsBgmMuted = isMuted;
+            plugin.Configuration.Save();
+            audioManager.UpdateBgmState();
+        }
+        ImGui.SameLine();
+        ImGui.Text("Mute");
 
         ImGui.EndGroup();
 
-        // --- Center Column (Opponent Preview) ---
         ImGui.NextColumn();
-        if (session.IsMultiplayerMode && session.OpponentBoardState != null)
-        {
-            var previewAreaPos = windowPos + new Vector2(ImGui.GetColumnOffset(1) + 5 * globalScale, hudY - 180f * globalScale);
-            var previewAreaSize = new Vector2(ImGui.GetColumnWidth(1) - 10 * globalScale, 175f * globalScale);
-            drawList.AddRectFilled(previewAreaPos, previewAreaPos + previewAreaSize, 0x80000000);
-
-            Vector2 iconSize = new Vector2(10f, 10f) * globalScale;
-            Vector2 currentIconPos = previewAreaPos + new Vector2(5, 5);
-
-            foreach (byte bubbleTypeByte in session.OpponentBoardState)
-            {
-                var bubbleTexture = textureManager.GetBubbleTexture((int)(sbyte)bubbleTypeByte); // Cast to signed byte then int
-                if (bubbleTexture != null)
-                {
-                    drawList.AddImage(bubbleTexture.ImGuiHandle, currentIconPos, currentIconPos + iconSize);
-                }
-
-                currentIconPos.X += iconSize.X + (2 * globalScale);
-                if (currentIconPos.X + iconSize.X > previewAreaPos.X + previewAreaSize.X)
-                {
-                    currentIconPos.X = previewAreaPos.X + 5;
-                    currentIconPos.Y += iconSize.Y + (2 * globalScale);
-                }
-            }
-        }
-
-
-        // --- Right Column ---
         ImGui.NextColumn();
-
-        var debugButtonSize = new Vector2(80, 25) * globalScale;
-        if (ImGui.Button("Debug: Clear", debugButtonSize))
-        {
-            session.Debug_ClearStage();
-        }
-
-        var pauseButtonSize = new Vector2(80, 25) * globalScale;
-        if (ImGui.Button("Pause", pauseButtonSize))
-        {
-            session.SetGameState(GameState.Paused);
-        }
 
         ImGui.Spacing();
         ImGui.Text($"Shots: {session.ShotsUntilDrop}");
         ImGui.Text($"Time: {session.TimeUntilDrop:F1}s");
 
         ImGui.Columns(1);
+    }
+
+    public static void DrawMultiplayerGameUI(
+        ImDrawListPtr drawList,
+        Vector2 hudAreaPos,
+        MultiplayerGameSession session,
+        Plugin plugin,
+        AudioManager audioManager,
+        TextureManager textureManager,
+        float availableWidth)
+    {
+        var globalScale = ImGuiHelpers.GlobalScale;
+        var windowPos = ImGui.GetWindowPos();
+        var contentMin = ImGui.GetWindowContentRegionMin();
+
+        // --- Left Group (Scores & Disconnect) ---
+        ImGui.SetCursorScreenPos(hudAreaPos + new Vector2(10 * globalScale, 0));
+        ImGui.BeginGroup();
+
+        ImGui.Text($"YOU: {session.MyScore}");
+        ImGui.Text($"OPPONENT: {session.OpponentScore}");
+        ImGui.Text("Best of 3");
+
+        ImGui.Spacing();
+
+        var disconnectButtonSize = new Vector2(100, 25) * globalScale;
+        if (ImGui.Button("Disconnect", disconnectButtonSize))
+        {
+            session.GoToMainMenu();
+        }
+        ImGui.EndGroup();
+
+        // --- Right Group (Minimap) ---
+        var rightColumnWidth = 150f * globalScale;
+        var previewAreaSize = new Vector2(rightColumnWidth - (20 * globalScale), (MainWindow.HudAreaHeight * globalScale) - (10 * globalScale));
+        var previewAreaScreenPosX = windowPos.X + contentMin.X + availableWidth - rightColumnWidth + (10 * globalScale);
+        var previewAreaScreenPosY = hudAreaPos.Y + (5 * globalScale);
+        var previewAreaPos = new Vector2(previewAreaScreenPosX, previewAreaScreenPosY);
+
+        drawList.AddRectFilled(previewAreaPos, previewAreaPos + previewAreaSize, (uint)0x80000000);
+
+        if (session.OpponentBoardState != null && session.GameBoard != null)
+        {
+            try
+            {
+                using (var ms = new MemoryStream(session.OpponentBoardState))
+                using (var reader = new BinaryReader(ms))
+                {
+                    int bubbleCount = reader.ReadInt32();
+                    for (int i = 0; i < bubbleCount; i++)
+                    {
+                        var bubbleX = reader.ReadSingle();
+                        var bubbleY = reader.ReadSingle();
+                        var bubbleType = reader.ReadByte();
+
+                        var texture = textureManager.GetBubbleTexture(bubbleType);
+                        if (texture == null) continue;
+
+                        var gameBoardWidth = session.GameBoard.AbstractWidth;
+                        var gameBoardHeight = session.GameBoard.AbstractHeight;
+
+                        var iconSize = new Vector2(8f, 8f) * globalScale;
+
+                        var iconX = previewAreaPos.X + (bubbleX / gameBoardWidth) * previewAreaSize.X;
+                        var iconY = previewAreaPos.Y + (bubbleY / gameBoardHeight) * previewAreaSize.Y;
+
+                        var pMin = new Vector2(iconX - (iconSize.X / 2), iconY - (iconSize.Y / 2));
+                        var pMax = new Vector2(iconX + (iconSize.X / 2), iconY + (iconSize.Y / 2));
+
+                        drawList.AddImage(texture.ImGuiHandle, pMin, pMax);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.Warning($"Could not draw opponent board state: {ex.Message}");
+            }
+        }
+    }
+
+    public static void DrawMultiplayerGameOverScreen(bool didWin, Action goToMainMenu, Action requestRematch)
+    {
+        var windowPos = ImGui.GetWindowPos();
+        var drawList = ImGui.GetWindowDrawList();
+
+        var text = didWin ? "YOU WIN!" : "YOU LOSE";
+        var color = didWin ? ImGui.GetColorU32(new Vector4(1, 1, 0, 1)) : ImGui.GetColorU32(new Vector4(1, 0.2f, 0.2f, 1f));
+
+        var textSize = ImGui.CalcTextSize(text) * 2;
+        var textPos = new Vector2(windowPos.X + (MainWindow.ScaledWindowSize.X - textSize.X) * 0.5f, windowPos.Y + (MainWindow.ScaledWindowSize.Y - textSize.Y) * 0.5f);
+
+        DrawTextWithOutline(drawList, text, textPos, color, (uint)0xFF000000, 2f);
+
+        var buttonSize = new Vector2(120, 30) * ImGuiHelpers.GlobalScale;
+        var buttonY = (textPos - windowPos).Y + textSize.Y + 20 * ImGuiHelpers.GlobalScale;
+
+        var totalButtonWidth = buttonSize.X * 2 + ImGui.GetStyle().ItemSpacing.X;
+        var buttonStartX = (MainWindow.ScaledWindowSize.X - totalButtonWidth) / 2;
+
+        ImGui.SetCursorPos(new Vector2(buttonStartX, buttonY));
+        if (ImGui.Button("Rematch", buttonSize))
+        {
+            requestRematch();
+        }
+
+        ImGui.SameLine();
+        ImGui.SetCursorPosX(buttonStartX + buttonSize.X + ImGui.GetStyle().ItemSpacing.X);
+        ImGui.SetCursorPosY(buttonY);
+        if (ImGui.Button("Main Menu", buttonSize))
+        {
+            goToMainMenu();
+        }
     }
 
     public static void DrawGameOverScreen(Action goToMainMenu)
@@ -212,7 +261,7 @@ public static class UIManager
         var textSize = ImGui.CalcTextSize(text) * 2;
         var textPos = new Vector2(windowPos.X + (MainWindow.ScaledWindowSize.X - textSize.X) * 0.5f, windowPos.Y + (MainWindow.ScaledWindowSize.Y - textSize.Y) * 0.5f);
 
-        DrawTextWithOutline(drawList, text, textPos, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)), 0xFF000000, 2f);
+        DrawTextWithOutline(drawList, text, textPos, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)), (uint)0xFF000000, 2f);
 
         var buttonSize = new Vector2(120, 30) * ImGuiHelpers.GlobalScale;
         var buttonPos = new Vector2((MainWindow.ScaledWindowSize.X - buttonSize.X) * 0.5f, (textPos - windowPos).Y + textSize.Y + 20 * ImGuiHelpers.GlobalScale);
@@ -231,7 +280,7 @@ public static class UIManager
         var textSize = ImGui.CalcTextSize(text) * 2;
         var textPos = new Vector2(windowPos.X + (MainWindow.ScaledWindowSize.X - textSize.X) * 0.5f, windowPos.Y + (MainWindow.ScaledWindowSize.Y - textSize.Y) * 0.5f);
 
-        DrawTextWithOutline(drawList, text, textPos, ImGui.GetColorU32(new Vector4(1, 1, 0, 1)), 0xFF000000, 2f);
+        DrawTextWithOutline(drawList, text, textPos, ImGui.GetColorU32(new Vector4(1, 1, 0, 1)), (uint)0xFF000000, 2f);
 
         var buttonText = $"Continue to Stage {nextStage}";
         var buttonSize = ImGui.CalcTextSize(buttonText) + new Vector2(20, 10) * ImGuiHelpers.GlobalScale;
@@ -252,7 +301,7 @@ public static class UIManager
         var textPos = new Vector2(windowPos.X + (MainWindow.ScaledWindowSize.X - textSize.X) * 0.5f, windowPos.Y + (MainWindow.ScaledWindowSize.Y - textSize.Y) * 0.5f);
         var relativeTextPos = textPos - windowPos;
 
-        DrawTextWithOutline(drawList, text, textPos, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)), 0xFF000000, 2f);
+        DrawTextWithOutline(drawList, text, textPos, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)), (uint)0xFF000000, 2f);
 
         var buttonSize = new Vector2(100, 30) * ImGuiHelpers.GlobalScale;
         var resumePos = new Vector2((MainWindow.ScaledWindowSize.X / 2) - buttonSize.X - 10 * ImGuiHelpers.GlobalScale, relativeTextPos.Y + textSize.Y + 20 * ImGuiHelpers.GlobalScale);

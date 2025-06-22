@@ -45,7 +45,8 @@ public class BubbleAnimation
     /// Updates the animation's state over time.
     /// </summary>
     /// <returns>True if the animation is still ongoing, false if it has finished.</returns>
-    public bool Update()
+    // CHANGE: The Update method now correctly accepts a deltaTime parameter.
+    public bool Update(float deltaTime)
     {
         var elapsedTime = (float)ImGui.GetTime() - this.startTime;
         if (elapsedTime > this.duration)
@@ -53,8 +54,7 @@ public class BubbleAnimation
 
         if (this.Type == BubbleAnimationType.Drop)
         {
-            // Explicitly ensure all parts of the calculation are floats.
-            var deltaTime = ImGui.GetIO().DeltaTime;
+            // Use the passed-in deltaTime instead of fetching it from ImGui.
             this.velocity.Y += 2000f * deltaTime;
             for (int i = 0; i < this.AnimatedBubbles.Count; i++)
             {
@@ -74,7 +74,6 @@ public class BubbleAnimation
     {
         if (this.Type != BubbleAnimationType.Pop) return 1.0f;
         var elapsedTime = (float)ImGui.GetTime() - this.startTime;
-        // Adding an explicit cast to float to be absolutely certain we avoid any conversion errors.
         return 1.0f - (elapsedTime / this.duration);
     }
 }

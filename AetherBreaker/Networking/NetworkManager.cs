@@ -15,8 +15,8 @@ namespace AetherBreaker.Networking
         private ClientWebSocket? webSocket;
         private CancellationTokenSource? cancellationTokenSource;
 
-        // Events for different network activities
-        public event Action? OnConnected;
+        // The "OnConnected" event now includes the passphrase string.
+        public event Action<string>? OnConnected;
         public event Action? OnDisconnected;
         public event Action<string>? OnError;
         public event Action<int>? OnAttackReceived; // Carries junk row count
@@ -33,11 +33,12 @@ namespace AetherBreaker.Networking
             {
                 webSocket = new ClientWebSocket();
                 cancellationTokenSource = new CancellationTokenSource();
-                Uri connectUri = new Uri($"{serverUri}?passphrase={Uri.EscapeDataString(passphrase)}");
+                Uri connectUri = new Uri($"{serverUri}?passphrase={Uri.EscapeDataString(passphrase)}&client=ab");
 
                 await webSocket.ConnectAsync(connectUri, cancellationTokenSource.Token);
 
-                OnConnected?.Invoke();
+                // When the connection is successful, we now send the passphrase along with the signal.
+                OnConnected?.Invoke(passphrase);
                 _ = Task.Run(() => StartListening(cancellationTokenSource.Token));
             }
             catch (Exception ex)
@@ -110,12 +111,11 @@ namespace AetherBreaker.Networking
 
             var payload = PayloadSerializer.Deserialize(payloadBytes);
             if (payload == null) return;
-            if (payload.Data == null) return;
 
             switch (type)
             {
                 case MessageType.ATTACK:
-                    if (payload.Data.Length >= 4)
+                    if (payload.Data != null && payload.Data.Length >= 4)
                     {
                         int junkRows = BitConverter.ToInt32(payload.Data, 0);
                         OnAttackReceived?.Invoke(junkRows);
@@ -123,7 +123,10 @@ namespace AetherBreaker.Networking
                     break;
 
                 case MessageType.GAME_STATE_UPDATE:
-                    OnGameStateUpdateReceived?.Invoke(payload.Data);
+                    if (payload.Data != null)
+                    {
+                        OnGameStateUpdateReceived?.Invoke(payload.Data);
+                    }
                     break;
 
                 case MessageType.MATCH_CONTROL:

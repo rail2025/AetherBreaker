@@ -15,29 +15,49 @@ namespace AetherBreaker.Windows;
 public class MainWindow : Window, IDisposable
 {
     private readonly Plugin plugin;
-    private readonly GameSession gameSession;
     private readonly TextureManager textureManager;
     private readonly AudioManager audioManager;
+
+    private GameSession? singlePlayerSession;
+    private MultiplayerGameSession? multiplayerSession;
+
+    private bool isMultiplayerMode = false;
 
     private Vector2 launcherPosition;
     private const int StagesPerBackground = 3;
 
-    private static readonly Vector2 BaseWindowSize = new(540, 720);
+    public static readonly Vector2 BaseWindowSize = new(540, 720);
     public static Vector2 ScaledWindowSize => BaseWindowSize * ImGuiHelpers.GlobalScale;
     public const float HudAreaHeight = 110f;
 
-    // Public accessor for the GameSession
-    public GameSession GetGameSession() => this.gameSession;
-
-    public MainWindow(Plugin plugin, AudioManager audioManager) : base("AetherBreaker")
+    public MainWindow(Plugin plugin, AudioManager audioManager, string idSuffix = "") : base("AetherBreaker" + idSuffix)
     {
         this.plugin = plugin;
         this.audioManager = audioManager;
         this.textureManager = new TextureManager();
-        this.gameSession = new GameSession(plugin.Configuration, audioManager, plugin.NetworkManager);
-
+        this.singlePlayerSession = null;
+        this.multiplayerSession = null;
         this.Flags |= ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
     }
+
+    public void StartSinglePlayerGame(bool isContinue)
+    {
+        this.isMultiplayerMode = false;
+        this.multiplayerSession = null;
+        this.singlePlayerSession = new GameSession(plugin.Configuration, audioManager, plugin.NetworkManager);
+        if (isContinue) { this.singlePlayerSession.ContinueGame(); } else { this.singlePlayerSession.StartNewGame(); }
+    }
+
+    public void StartMultiplayerGame(string passphrase)
+    {
+        this.isMultiplayerMode = true;
+        this.singlePlayerSession = null;
+        this.multiplayerSession = new MultiplayerGameSession(plugin.NetworkManager, audioManager);
+        this.multiplayerSession.StartNewMatch(passphrase);
+    }
+
+    public GameSession? GetGameSession() => this.singlePlayerSession;
+    public MultiplayerGameSession? GetMultiplayerGameSession() => this.multiplayerSession;
 
     public void Dispose()
     {
@@ -46,12 +66,11 @@ public class MainWindow : Window, IDisposable
 
     public override void OnClose()
     {
-        if (this.gameSession.CurrentGameState == GameState.InGame)
-        {
-            this.gameSession.SaveState();
-        }
+        if (!isMultiplayerMode && singlePlayerSession?.CurrentGameState == GameState.InGame) { singlePlayerSession.SaveState(); }
         this.audioManager.EndPlaylist();
-        this.gameSession.SetGameState(GameState.MainMenu);
+        this.singlePlayerSession = null;
+        this.multiplayerSession = null;
+        this.isMultiplayerMode = false;
         base.OnClose();
     }
 
@@ -64,305 +83,381 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
-        this.gameSession.Update();
-        DrawBackground();
+        var isGameActive = isMultiplayerMode ? multiplayerSession != null : singlePlayerSession != null;
+        var deltaTime = ImGui.GetIO().DeltaTime;
 
-        switch (this.gameSession.CurrentGameState)
+        if (!isGameActive)
         {
-            case GameState.MainMenu:
-                UIManager.DrawMainMenu(this.plugin, this.gameSession.StartNewGame, this.gameSession.ContinueGame, this.plugin.Configuration.SavedGame != null, this.plugin.ToggleConfigUI, this.plugin.ToggleAboutUI);
-                break;
-            case GameState.InGame:
-                DrawInGame();
-                break;
-            case GameState.Paused:
-                DrawPausedScreen();
-                break;
-            case GameState.StageCleared:
-                UIManager.DrawStageClearedScreen(this.gameSession.CurrentStage + 1, this.gameSession.ContinueToNextStage);
-                break;
-            case GameState.GameOver:
-                UIManager.DrawGameOverScreen(this.gameSession.GoToMainMenu);
-                break;
+            DrawBackground();
+            UIManager.DrawMainMenu(plugin, () => StartSinglePlayerGame(false), () => StartSinglePlayerGame(true), this.plugin.Configuration.SavedGame != null, this.plugin.ToggleConfigUI, this.plugin.ToggleAboutUI);
+            return;
         }
 
-        DrawMultiplayerOverlays();
-    }
-
-    private void DrawMultiplayerOverlays()
-    {
-        if (!gameSession.IsMultiplayerMode) return;
-
-        string overlayText = "";
-        bool showRematch = false;
-
-        switch (gameSession.CurrentMatchState)
+        if (isMultiplayerMode && multiplayerSession != null)
         {
-            case GameSession.MultiplayerMatchState.RoundStarting:
-                overlayText = "Round Start!";
-                break;
-            case GameSession.MultiplayerMatchState.RoundOver:
-                overlayText = gameSession.MyScore > gameSession.OpponentScore ? "YOU WIN THE ROUND!" : "YOU LOSE THE ROUND";
-                showRematch = true;
-                break;
-            case GameSession.MultiplayerMatchState.MatchOver:
-                overlayText = gameSession.MyScore > gameSession.OpponentScore ? "YOU WIN THE MATCH!" : "YOU LOSE THE MATCH";
-                showRematch = true;
-                break;
+            multiplayerSession.Update(deltaTime);
+            DrawMultiplayerView();
         }
-
-        if (!string.IsNullOrEmpty(overlayText))
+        else if (!isMultiplayerMode && singlePlayerSession != null)
         {
-            var viewportSize = ImGui.GetWindowSize();
-            var textSize = ImGui.CalcTextSize(overlayText) * 2f;
-            var textPos = ImGui.GetWindowPos() + new Vector2((viewportSize.X - textSize.X) * 0.5f, viewportSize.Y * 0.4f);
-
-            ImGui.GetWindowDrawList().AddText(ImGui.GetFont(), ImGui.GetFontSize() * 2f, textPos, 0xFFFFFFFF, overlayText);
-
-            if (showRematch)
-            {
-                var buttonSize = new Vector2(120, 30) * ImGuiHelpers.GlobalScale;
-                var buttonPos = new Vector2((viewportSize.X - buttonSize.X) * 0.5f, (textPos - ImGui.GetWindowPos()).Y + textSize.Y + 20);
-                ImGui.SetCursorPos(buttonPos);
-                if (ImGui.Button("Rematch?", buttonSize))
-                {
-                    gameSession.RequestRematch();
-                }
-            }
+            singlePlayerSession.Update(deltaTime);
+            DrawSinglePlayerView();
         }
     }
 
-    private void DrawInGame()
+    private void DrawSinglePlayerView()
     {
+        if (this.singlePlayerSession == null) return;
+        DrawBackground(this.singlePlayerSession.CurrentGameState, this.singlePlayerSession.CurrentStage);
+        switch (this.singlePlayerSession.CurrentGameState)
+        {
+            case GameState.InGame: DrawInGame(this.singlePlayerSession); break;
+            case GameState.Paused: DrawPausedScreen(this.singlePlayerSession); break;
+            case GameState.StageCleared: UIManager.DrawStageClearedScreen(this.singlePlayerSession.CurrentStage + 1, this.singlePlayerSession.ContinueToNextStage); break;
+            case GameState.GameOver: UIManager.DrawGameOverScreen(this.singlePlayerSession.GoToMainMenu); break;
+            case GameState.MainMenu: this.singlePlayerSession = null; break;
+        }
+    }
+
+    private void DrawMultiplayerView()
+    {
+        if (this.multiplayerSession == null) return;
+        DrawBackground(this.multiplayerSession.CurrentGameState);
+        switch (this.multiplayerSession.CurrentGameState)
+        {
+            case GameState.InGame: DrawInGame(this.multiplayerSession); break;
+            case GameState.GameOver: UIManager.DrawMultiplayerGameOverScreen(this.multiplayerSession.PlayerWon, this.multiplayerSession.GoToMainMenu, this.multiplayerSession.RequestRematch); break;
+            case GameState.MainMenu: this.multiplayerSession = null; break;
+        }
+    }
+
+    private void DrawInGame(GameSession session)
+    {
+        if (session.GameBoard == null) return;
         var windowPos = ImGui.GetWindowPos();
+        var contentMin = ImGui.GetWindowContentRegionMin();
+        var contentMax = ImGui.GetWindowContentRegionMax();
         var drawList = ImGui.GetWindowDrawList();
+        var scale = ImGuiHelpers.GlobalScale;
 
-        var scaledHudHeight = HudAreaHeight * ImGuiHelpers.GlobalScale;
-        this.launcherPosition = new Vector2(windowPos.X + ScaledWindowSize.X * 0.5f, windowPos.Y + ScaledWindowSize.Y - (scaledHudHeight / 2));
+        float availableWidth = contentMax.X - contentMin.X;
+        float pixelsPerUnit = availableWidth / session.GameBoard.AbstractWidth;
+        var contentOrigin = windowPos + contentMin;
 
-        if (this.gameSession.GameBoard != null)
-        {
-            foreach (var bubble in this.gameSession.GameBoard.Bubbles)
-            {
-                DrawBubble(drawList, windowPos, bubble);
-            }
-            this.gameSession.GameBoard.DrawBoardChrome(drawList, windowPos);
-        }
+        // CHANGE: Calculate the HUD's Y position based on the Game Over line's scaled position.
+        var abstractGameOverLineY = session.GetAbstractGameOverLineY();
+        var scaledGameOverLineY = contentOrigin.Y + abstractGameOverLineY * pixelsPerUnit;
+        var hudAreaPos = new Vector2(contentOrigin.X, scaledGameOverLineY);
 
-        DrawLauncherAndAiming(drawList, windowPos);
+        this.launcherPosition = new Vector2(contentOrigin.X + availableWidth * 0.5f, hudAreaPos.Y + (HudAreaHeight * scale / 2));
 
-        if (this.gameSession.ActiveBubble != null)
-            DrawBubble(drawList, windowPos, this.gameSession.ActiveBubble);
+        DrawBoardChrome(drawList, contentOrigin, pixelsPerUnit, session);
 
-        UpdateAndDrawBubbleAnimations(drawList, windowPos);
-        UpdateAndDrawTextAnimations(drawList, windowPos);
-
-        UIManager.DrawGameUI(drawList, windowPos, this.gameSession, this.plugin, this.audioManager, this.textureManager);
+        foreach (var bubble in session.GameBoard.Bubbles) { DrawBubble(drawList, contentOrigin, bubble, pixelsPerUnit); }
+        DrawLauncherAndAiming(session, drawList, contentOrigin, pixelsPerUnit);
+        if (session.ActiveBubble != null) DrawBubble(drawList, contentOrigin, session.ActiveBubble, pixelsPerUnit);
+        UpdateAndDrawBubbleAnimations(drawList, contentOrigin, session.ActiveBubbleAnimations, pixelsPerUnit);
+        UpdateAndDrawTextAnimations(drawList, contentOrigin, session.ActiveTextAnimations, pixelsPerUnit);
+        UIManager.DrawGameUI(drawList, hudAreaPos, session, this.plugin, this.audioManager, this.textureManager, availableWidth);
     }
 
-    private void DrawPausedScreen()
+    private void DrawInGame(MultiplayerGameSession session)
     {
+        if (session.GameBoard == null) return;
         var windowPos = ImGui.GetWindowPos();
+        var contentMin = ImGui.GetWindowContentRegionMin();
+        var contentMax = ImGui.GetWindowContentRegionMax();
         var drawList = ImGui.GetWindowDrawList();
+        var scale = ImGuiHelpers.GlobalScale;
 
-        if (this.gameSession.GameBoard != null)
-        {
-            foreach (var bubble in this.gameSession.GameBoard.Bubbles)
-            {
-                DrawBubble(drawList, windowPos, bubble);
-            }
-            this.gameSession.GameBoard.DrawBoardChrome(drawList, windowPos);
-        }
+        float availableWidth = contentMax.X - contentMin.X;
+        float pixelsPerUnit = availableWidth / session.GameBoard.AbstractWidth;
+        var contentOrigin = windowPos + contentMin;
 
-        UIManager.DrawGameUI(drawList, windowPos, this.gameSession, this.plugin, this.audioManager, this.textureManager);
+        // CHANGE: Calculate the HUD's Y position based on the Game Over line's scaled position.
+        var abstractGameOverLineY = session.GetAbstractGameOverLineY();
+        var scaledGameOverLineY = contentOrigin.Y + abstractGameOverLineY * pixelsPerUnit;
+        var hudAreaPos = new Vector2(contentOrigin.X, scaledGameOverLineY);
 
-        UIManager.DrawPausedScreen(
-            () => this.gameSession.SetGameState(GameState.InGame),
-            this.gameSession.GoToMainMenu
-        );
+        this.launcherPosition = new Vector2(contentOrigin.X + availableWidth * 0.5f, hudAreaPos.Y + (HudAreaHeight * scale / 2));
+
+        DrawBoardChrome(drawList, contentOrigin, pixelsPerUnit, session);
+
+        foreach (var bubble in session.GameBoard.Bubbles) { DrawBubble(drawList, contentOrigin, bubble, pixelsPerUnit); }
+        DrawLauncherAndAiming(session, drawList, contentOrigin, pixelsPerUnit);
+        if (session.ActiveBubble != null) DrawBubble(drawList, contentOrigin, session.ActiveBubble, pixelsPerUnit);
+        UpdateAndDrawBubbleAnimations(drawList, contentOrigin, session.ActiveBubbleAnimations, pixelsPerUnit);
+        UpdateAndDrawTextAnimations(drawList, contentOrigin, session.ActiveTextAnimations, pixelsPerUnit);
+        UIManager.DrawMultiplayerGameUI(drawList, hudAreaPos, session, this.plugin, this.audioManager, this.textureManager, availableWidth);
     }
 
-    private void DrawBubble(ImDrawListPtr drawList, Vector2 windowPos, Bubble bubble)
+    private void DrawPausedScreen(GameSession session)
     {
-        var bubblePos = windowPos + bubble.Position;
+        if (session.GameBoard == null) return;
+        var windowPos = ImGui.GetWindowPos();
+        var contentMin = ImGui.GetWindowContentRegionMin();
+        var contentMax = ImGui.GetWindowContentRegionMax();
+        var drawList = ImGui.GetWindowDrawList();
+        var scale = ImGuiHelpers.GlobalScale;
+
+        float availableWidth = contentMax.X - contentMin.X;
+        float pixelsPerUnit = availableWidth / session.GameBoard.AbstractWidth;
+        var contentOrigin = windowPos + contentMin;
+
+        foreach (var bubble in session.GameBoard.Bubbles) { DrawBubble(drawList, contentOrigin, bubble, pixelsPerUnit); }
+
+        DrawBoardChrome(drawList, contentOrigin, pixelsPerUnit, session);
+
+        var abstractGameOverLineY = session.GetAbstractGameOverLineY();
+        var scaledGameOverLineY = contentOrigin.Y + abstractGameOverLineY * pixelsPerUnit;
+        var hudAreaPos = new Vector2(contentOrigin.X, scaledGameOverLineY);
+
+        UIManager.DrawGameUI(drawList, hudAreaPos, session, this.plugin, this.audioManager, this.textureManager, availableWidth);
+        UIManager.DrawPausedScreen(() => session.SetGameState(GameState.InGame), session.GoToMainMenu);
+    }
+
+    private void DrawBoardChrome(ImDrawListPtr drawList, Vector2 contentOrigin, float pixelsPerUnit, GameSession session)
+    {
+        if (session.GameBoard == null) return;
+        var abstractGameOverLineY = session.GetAbstractGameOverLineY();
+        var scaledGameOverLineY = contentOrigin.Y + abstractGameOverLineY * pixelsPerUnit;
+        var scaledContentWidth = session.GameBoard.AbstractWidth * pixelsPerUnit;
+
+        drawList.AddLine(new Vector2(contentOrigin.X, scaledGameOverLineY), new Vector2(contentOrigin.X + scaledContentWidth, scaledGameOverLineY), (uint)0x800000FF, 2f * ImGuiHelpers.GlobalScale);
+    }
+
+    private void DrawBoardChrome(ImDrawListPtr drawList, Vector2 contentOrigin, float pixelsPerUnit, MultiplayerGameSession session)
+    {
+        if (session.GameBoard == null) return;
+        var abstractGameOverLineY = session.GetAbstractGameOverLineY();
+        var scaledGameOverLineY = contentOrigin.Y + abstractGameOverLineY * pixelsPerUnit;
+        var scaledContentWidth = session.GameBoard.AbstractWidth * pixelsPerUnit;
+
+        drawList.AddLine(new Vector2(contentOrigin.X, scaledGameOverLineY), new Vector2(contentOrigin.X + scaledContentWidth, scaledGameOverLineY), (uint)0x800000FF, 2f * ImGuiHelpers.GlobalScale);
+    }
+
+    private void DrawBubble(ImDrawListPtr drawList, Vector2 contentOrigin, Bubble bubble, float pixelsPerUnit)
+    {
+        var finalPos = contentOrigin + bubble.Position * pixelsPerUnit;
+        var finalRadius = bubble.Radius * pixelsPerUnit;
         var bubbleTexture = this.textureManager.GetBubbleTexture(bubble.BubbleType);
-
         if (bubbleTexture != null)
         {
-            var p_min = bubblePos - new Vector2(bubble.Radius, bubble.Radius);
-            var p_max = bubblePos + new Vector2(bubble.Radius, bubble.Radius);
-            drawList.AddImageRounded(bubbleTexture.ImGuiHandle, p_min, p_max, Vector2.Zero, Vector2.One, 0xFFFFFFFF, bubble.Radius);
+            var p_min = finalPos - new Vector2(finalRadius, finalRadius);
+            var p_max = finalPos + new Vector2(finalRadius, finalRadius);
+            drawList.AddImageRounded(bubbleTexture.ImGuiHandle, p_min, p_max, Vector2.Zero, Vector2.One, (uint)0xFFFFFFFF, finalRadius);
         }
-        else
-        {
-            drawList.AddCircleFilled(bubblePos, bubble.Radius, bubble.Color);
-        }
+        else { drawList.AddCircleFilled(finalPos, finalRadius, bubble.Color); }
 
+        var scale = ImGuiHelpers.GlobalScale;
         if (bubble.BubbleType >= 0 || bubble.BubbleType == -2)
         {
-            var outlineColor = ImGui.GetColorU32(new Vector4(0, 0, 0, 1f));
-            drawList.AddCircle(bubblePos, bubble.Radius, outlineColor, 12, 3f * ImGuiHelpers.GlobalScale);
+            drawList.AddCircle(finalPos, finalRadius, (uint)0xFF000000, 12, 3f * scale);
         }
-
-        if (bubble.BubbleType == -1)
+        if (bubble.BubbleType == -1 || bubble.BubbleType == -6)
         {
-            drawList.AddCircle(bubblePos, bubble.Radius, ImGui.GetColorU32(new Vector4(0.5f, 0.5f, 0.5f, 1.0f)), 12, 1.5f * ImGuiHelpers.GlobalScale);
+            drawList.AddCircle(finalPos, finalRadius, (uint)0xFF808080, 12, 1.5f * scale);
         }
         else if (bubble.BubbleType == -2)
         {
-            var dashColor = ImGui.GetColorU32(new Vector4(1, 1, 1, 0.9f));
-            drawList.AddLine(bubblePos - new Vector2(bubble.Radius * 0.5f, 0), bubblePos + new Vector2(bubble.Radius * 0.5f, 0), dashColor, 3f * ImGuiHelpers.GlobalScale);
+            drawList.AddLine(finalPos - new Vector2(finalRadius * 0.5f, 0), finalPos + new Vector2(finalRadius * 0.5f, 0), (uint)0xE6FFFFFF, 3f * scale);
         }
     }
 
-    private void DrawLauncherAndAiming(ImDrawListPtr drawList, Vector2 windowPos)
+    private void DrawLauncherAndAiming(GameSession session, ImDrawListPtr drawList, Vector2 contentOrigin, float pixelsPerUnit)
     {
-        var nextBubble = this.gameSession.NextBubble;
-        if (nextBubble == null) return;
+        if (session.NextBubble == null) return;
+        var nextBubble = session.NextBubble;
 
-        var launcherBaseRadius = nextBubble.Radius * 1.2f;
-        drawList.AddCircleFilled(this.launcherPosition, launcherBaseRadius, ImGui.GetColorU32(new Vector4(0.8f, 0.8f, 0.8f, 1.0f)));
+        var scale = ImGuiHelpers.GlobalScale;
+        var finalLauncherRadius = nextBubble.Radius * pixelsPerUnit;
 
-        DrawBubble(drawList, Vector2.Zero, new Bubble(this.launcherPosition, Vector2.Zero, nextBubble.Radius, nextBubble.Color, nextBubble.BubbleType));
+        drawList.AddCircleFilled(this.launcherPosition, finalLauncherRadius * 1.2f, (uint)0xFFCCCCCC);
+        var launcherBubble = new Bubble(this.launcherPosition, Vector2.Zero, finalLauncherRadius, nextBubble.Color, nextBubble.BubbleType);
+        DrawBubble(drawList, Vector2.Zero, launcherBubble, 1.0f);
 
         if (ImGui.IsWindowHovered())
         {
             var mousePos = ImGui.GetMousePos();
-            if (mousePos.Y < this.launcherPosition.Y - nextBubble.Radius)
+            if (mousePos.Y < this.launcherPosition.Y - finalLauncherRadius)
             {
                 var direction = Vector2.Normalize(mousePos - this.launcherPosition);
-                if (direction.Y > -0.1f)
-                {
-                    direction.Y = -0.1f;
-                    direction = Vector2.Normalize(direction);
-                }
-
-                if (this.gameSession.CurrentStage <= 2 || this.gameSession.IsHelperLineActiveForStage)
-                    DrawHelperLine(drawList, direction, windowPos);
+                if (direction.Y > -0.1f) { direction.Y = -0.1f; direction = Vector2.Normalize(direction); }
+                if (session.IsHelperLineActiveForStage)
+                    DrawHelperLine(session.GameBoard, drawList, direction, contentOrigin, pixelsPerUnit, nextBubble);
                 else
-                    drawList.AddLine(this.launcherPosition, this.launcherPosition + direction * 150f * ImGuiHelpers.GlobalScale, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.5f)), 3f * ImGuiHelpers.GlobalScale);
-
-                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && this.gameSession.ActiveBubble == null)
-                    this.gameSession.FireBubble(direction, this.launcherPosition, windowPos);
+                    drawList.AddLine(this.launcherPosition, this.launcherPosition + direction * 150f * scale, (uint)0x80FFFFFF, 3f * scale);
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && session.ActiveBubble == null)
+                {
+                    var abstractLauncherPos = (this.launcherPosition - contentOrigin) / pixelsPerUnit;
+                    session.FireBubble(direction, abstractLauncherPos);
+                }
             }
         }
     }
 
-    private List<Vector2> PredictHelperLinePath(Vector2 startPos, Vector2 velocity, float bubbleRadius)
+    private void DrawLauncherAndAiming(MultiplayerGameSession session, ImDrawListPtr drawList, Vector2 contentOrigin, float pixelsPerUnit)
+    {
+        if (session.NextBubble == null) return;
+        var nextBubble = session.NextBubble;
+
+        var scale = ImGuiHelpers.GlobalScale;
+        var finalLauncherRadius = nextBubble.Radius * pixelsPerUnit;
+
+        drawList.AddCircleFilled(this.launcherPosition, finalLauncherRadius * 1.2f, (uint)0xFFCCCCCC);
+        var launcherBubble = new Bubble(this.launcherPosition, Vector2.Zero, finalLauncherRadius, nextBubble.Color, nextBubble.BubbleType);
+        DrawBubble(drawList, Vector2.Zero, launcherBubble, 1.0f);
+
+        if (ImGui.IsWindowHovered())
+        {
+            var mousePos = ImGui.GetMousePos();
+            if (mousePos.Y < this.launcherPosition.Y - finalLauncherRadius)
+            {
+                var direction = Vector2.Normalize(mousePos - this.launcherPosition);
+                if (direction.Y > -0.1f) { direction.Y = -0.1f; direction = Vector2.Normalize(direction); }
+                if (session.IsHelperLineActive)
+                    DrawHelperLine(session.GameBoard, drawList, direction, contentOrigin, pixelsPerUnit, nextBubble);
+                else
+                    drawList.AddLine(this.launcherPosition, this.launcherPosition + direction * 150f * scale, (uint)0x80FFFFFF, 3f * scale);
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && session.ActiveBubble == null)
+                {
+                    var abstractLauncherPos = (this.launcherPosition - contentOrigin) / pixelsPerUnit;
+                    session.FireBubble(direction, abstractLauncherPos);
+                }
+            }
+        }
+    }
+
+    private void DrawHelperLine(GameBoard? gameBoard, ImDrawListPtr drawList, Vector2 direction, Vector2 contentOrigin, float pixelsPerUnit, Bubble nextBubble)
+    {
+        if (gameBoard == null) return;
+        var abstractStartPos = (this.launcherPosition - contentOrigin) / pixelsPerUnit;
+        var abstractVelocity = direction * 60f;
+        var abstractBubbleRadius = nextBubble.Radius;
+        var pathPoints = PredictHelperLinePath(gameBoard, abstractStartPos, abstractVelocity, abstractBubbleRadius);
+        uint color = (uint)0x4DFFFFFF;
+        var scale = ImGuiHelpers.GlobalScale;
+        for (int i = 0; i < pathPoints.Count - 1; i++)
+        {
+            drawList.AddLine(contentOrigin + pathPoints[i] * pixelsPerUnit, contentOrigin + pathPoints[i + 1] * pixelsPerUnit, color, 2f * scale);
+        }
+        var lastPoint = pathPoints.LastOrDefault();
+        var snappedPosition = gameBoard.GetSnappedPosition(lastPoint, null);
+        drawList.AddCircle(contentOrigin + snappedPosition * pixelsPerUnit, abstractBubbleRadius * pixelsPerUnit, (uint)0x66FFFFFF, 12, 2f * scale);
+    }
+
+    private void DrawHelperLine(MultiplayerGameBoard? gameBoard, ImDrawListPtr drawList, Vector2 direction, Vector2 contentOrigin, float pixelsPerUnit, Bubble nextBubble)
+    {
+        if (gameBoard == null) return;
+        var abstractStartPos = (this.launcherPosition - contentOrigin) / pixelsPerUnit;
+        var abstractVelocity = direction * 60f;
+        var abstractBubbleRadius = nextBubble.Radius;
+        var pathPoints = PredictHelperLinePath(gameBoard, abstractStartPos, abstractVelocity, abstractBubbleRadius);
+        uint color = (uint)0x4DFFFFFF;
+        var scale = ImGuiHelpers.GlobalScale;
+        for (int i = 0; i < pathPoints.Count - 1; i++)
+        {
+            drawList.AddLine(contentOrigin + pathPoints[i] * pixelsPerUnit, contentOrigin + pathPoints[i + 1] * pixelsPerUnit, color, 2f * scale);
+        }
+        var lastPoint = pathPoints.LastOrDefault();
+        var snappedPosition = gameBoard.GetSnappedPosition(lastPoint, null);
+        drawList.AddCircle(contentOrigin + snappedPosition * pixelsPerUnit, abstractBubbleRadius * pixelsPerUnit, (uint)0x66FFFFFF, 12, 2f * scale);
+    }
+
+    private List<Vector2> PredictHelperLinePath(GameBoard gameBoard, Vector2 startPos, Vector2 velocity, float bubbleRadius)
     {
         var pathPoints = new List<Vector2> { startPos };
         var currentPos = startPos;
         var currentVel = velocity;
         int bounces = 0;
-
+        float boardWidth = gameBoard.AbstractWidth;
         for (int i = 0; i < 400; i++)
         {
             currentPos += currentVel * 0.01f;
-
-            if (currentPos.X - bubbleRadius < 0)
-            {
-                currentVel.X *= -1;
-                currentPos.X = bubbleRadius;
-                pathPoints.Add(currentPos);
-                bounces++;
-            }
-            else if (currentPos.X + bubbleRadius > ScaledWindowSize.X)
-            {
-                currentVel.X *= -1;
-                currentPos.X = ScaledWindowSize.X - bubbleRadius;
-                pathPoints.Add(currentPos);
-                bounces++;
-            }
-
+            if (currentPos.X - bubbleRadius < 0) { currentVel.X *= -1; currentPos.X = bubbleRadius; pathPoints.Add(currentPos); bounces++; }
+            else if (currentPos.X + bubbleRadius > boardWidth) { currentVel.X *= -1; currentPos.X = boardWidth - bubbleRadius; pathPoints.Add(currentPos); bounces++; }
             var tempBubble = new Bubble(currentPos, currentVel, bubbleRadius, 0, 0);
-            if (this.gameSession.GameBoard != null && this.gameSession.GameBoard.FindCollision(tempBubble) != null)
-            {
-                pathPoints.Add(currentPos);
-                return pathPoints;
-            }
+            if (gameBoard.FindCollision(tempBubble) != null) { pathPoints.Add(currentPos); return pathPoints; }
             if (bounces >= 5) return pathPoints;
         }
         pathPoints.Add(currentPos);
         return pathPoints;
     }
 
-    private void DrawHelperLine(ImDrawListPtr drawList, Vector2 direction, Vector2 windowPos)
+    private List<Vector2> PredictHelperLinePath(MultiplayerGameBoard gameBoard, Vector2 startPos, Vector2 velocity, float bubbleRadius)
     {
-        if (this.gameSession.NextBubble == null) return;
-        var pathPoints = PredictHelperLinePath(this.launcherPosition - windowPos, direction * (1200f * ImGuiHelpers.GlobalScale), this.gameSession.NextBubble.Radius);
-        var color = ImGui.GetColorU32(new Vector4(1, 1, 1, 0.3f));
-        for (int i = 0; i < pathPoints.Count - 1; i++)
+        var pathPoints = new List<Vector2> { startPos };
+        var currentPos = startPos;
+        var currentVel = velocity;
+        int bounces = 0;
+        float boardWidth = gameBoard.AbstractWidth;
+        for (int i = 0; i < 400; i++)
         {
-            drawList.AddLine(windowPos + pathPoints[i], windowPos + pathPoints[i + 1], color, 2f * ImGuiHelpers.GlobalScale);
+            currentPos += currentVel * 0.01f;
+            if (currentPos.X - bubbleRadius < 0) { currentVel.X *= -1; currentPos.X = bubbleRadius; pathPoints.Add(currentPos); bounces++; }
+            else if (currentPos.X + bubbleRadius > boardWidth) { currentVel.X *= -1; currentPos.X = boardWidth - bubbleRadius; pathPoints.Add(currentPos); bounces++; }
+            var tempBubble = new Bubble(currentPos, currentVel, bubbleRadius, 0, 0);
+            if (gameBoard.FindCollision(tempBubble) != null) { pathPoints.Add(currentPos); return pathPoints; }
+            if (bounces >= 5) return pathPoints;
         }
+        pathPoints.Add(currentPos);
+        return pathPoints;
     }
 
-    private void DrawBackground()
+    private void DrawBackground(GameState? gameState = null, int stage = 1)
     {
         var bgCount = this.textureManager.GetBackgroundCount();
         if (bgCount == 0) return;
-
-        var bgIndex = 0;
-        if (this.gameSession.CurrentGameState != GameState.MainMenu)
-        {
-            bgIndex = (this.gameSession.CurrentStage - 1) / StagesPerBackground;
-        }
-
+        var bgIndex = (stage - 1) / StagesPerBackground;
         var textureToDraw = this.textureManager.GetBackground(bgIndex);
         if (textureToDraw == null) return;
-
         ImGui.SetCursorPos(Vector2.Zero);
         ImGui.Image(textureToDraw.ImGuiHandle, ImGui.GetContentRegionAvail());
     }
 
-    private void UpdateAndDrawBubbleAnimations(ImDrawListPtr drawList, Vector2 windowPos)
+    private void UpdateAndDrawBubbleAnimations(ImDrawListPtr drawList, Vector2 contentOrigin, List<BubbleAnimation> animations, float pixelsPerUnit)
     {
-        for (int i = this.gameSession.ActiveBubbleAnimations.Count - 1; i >= 0; i--)
+        for (int i = animations.Count - 1; i >= 0; i--)
         {
-            var anim = this.gameSession.ActiveBubbleAnimations[i];
-            if (anim.Update())
+            var anim = animations[i];
+            if (anim.Update(ImGui.GetIO().DeltaTime))
             {
                 foreach (var bubble in anim.AnimatedBubbles)
                 {
-                    var scale = anim.GetCurrentScale();
-                    if (scale > 0.01f)
+                    var animScale = anim.GetCurrentScale();
+                    if (animScale > 0.01f)
                     {
-                        var tempBubble = new Bubble(bubble.Position, Vector2.Zero, bubble.Radius * scale, bubble.Color, bubble.BubbleType);
-                        DrawBubble(drawList, windowPos, tempBubble);
+                        var tempBubble = new Bubble(bubble.Position, Vector2.Zero, bubble.Radius * animScale, bubble.Color, bubble.BubbleType);
+                        DrawBubble(drawList, contentOrigin, tempBubble, pixelsPerUnit);
                     }
                 }
             }
-            else
-            {
-                this.gameSession.ActiveBubbleAnimations.RemoveAt(i);
-            }
+            else { animations.RemoveAt(i); }
         }
     }
 
-    private void UpdateAndDrawTextAnimations(ImDrawListPtr drawList, Vector2 windowPos)
+    private void UpdateAndDrawTextAnimations(ImDrawListPtr drawList, Vector2 contentOrigin, List<TextAnimation> animations, float pixelsPerUnit)
     {
-        for (int i = this.gameSession.ActiveTextAnimations.Count - 1; i >= 0; i--)
+        for (int i = animations.Count - 1; i >= 0; i--)
         {
-            var anim = this.gameSession.ActiveTextAnimations[i];
-            if (anim.Update())
+            var anim = animations[i];
+            if (anim.Update(ImGui.GetIO().DeltaTime))
             {
                 var color = anim.GetCurrentColor();
-                var textPos = windowPos + anim.Position;
+                var textPos = contentOrigin + anim.Position * pixelsPerUnit;
+                var fontSize = ImGui.GetFontSize() * anim.Scale * ImGuiHelpers.GlobalScale;
                 if (anim.IsBonus)
                 {
-                    var outlineColor = ImGui.GetColorU32(new Vector4(1, 1, 1, (color >> 24) / 255f));
-                    var outlineOffset = new Vector2(1, 1);
-                    drawList.AddText(ImGui.GetFont(), ImGui.GetFontSize() * anim.Scale, textPos - outlineOffset, outlineColor, anim.Text);
-                    drawList.AddText(ImGui.GetFont(), ImGui.GetFontSize() * anim.Scale, textPos + new Vector2(outlineOffset.X, -outlineOffset.Y), outlineColor, anim.Text);
-                    drawList.AddText(ImGui.GetFont(), ImGui.GetFontSize() * anim.Scale, textPos + new Vector2(-outlineOffset.X, outlineOffset.Y), outlineColor, anim.Text);
-                    drawList.AddText(ImGui.GetFont(), ImGui.GetFontSize() * anim.Scale, textPos + outlineOffset, outlineColor, anim.Text);
+                    uint outlineColor = (uint)0xE6FFFFFF;
+                    var outlineOffset = new Vector2(1, 1) * ImGuiHelpers.GlobalScale;
+                    drawList.AddText(ImGui.GetFont(), fontSize, textPos - outlineOffset, outlineColor, anim.Text);
+                    drawList.AddText(ImGui.GetFont(), fontSize, textPos + new Vector2(outlineOffset.X, -outlineOffset.Y), outlineColor, anim.Text);
+                    drawList.AddText(ImGui.GetFont(), fontSize, textPos + new Vector2(-outlineOffset.X, outlineOffset.Y), outlineColor, anim.Text);
+                    drawList.AddText(ImGui.GetFont(), fontSize, textPos + outlineOffset, outlineColor, anim.Text);
                 }
-                drawList.AddText(ImGui.GetFont(), ImGui.GetFontSize() * anim.Scale, textPos, color, anim.Text);
+                drawList.AddText(ImGui.GetFont(), fontSize, textPos, color, anim.Text);
             }
-            else
-            {
-                this.gameSession.ActiveTextAnimations.RemoveAt(i);
-            }
+            else { animations.RemoveAt(i); }
         }
     }
 }

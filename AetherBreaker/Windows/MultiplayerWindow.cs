@@ -18,7 +18,7 @@ namespace AetherBreaker.Windows
         private enum SessionState { Choice, PassphraseEntry, Loading }
         private SessionState currentState = SessionState.Choice;
 
-        private string serverAddress = "wss://aetherbreaker-server.onrender.com/ws"; // Placeholder Server
+        private string serverAddress = "wss://aetherdraw-server.onrender.com/ws"; // Placeholder Server
         private string inputPassphrase = "";
         private string generatedPassphrase = "";
         private string statusMessage = "Disconnected";
@@ -38,7 +38,6 @@ namespace AetherBreaker.Windows
 
         public void Dispose()
         {
-            // Unsubscribe from events here if you were to subscribe
         }
 
         public override void OnOpen()
@@ -56,10 +55,7 @@ namespace AetherBreaker.Windows
             {
                 this.currentState = SessionState.Choice; // Go back to choice on error
             }
-            else if (status == "Connected")
-            {
-                this.IsOpen = false; // Close window on successful connection
-            }
+            // This window no longer closes itself. The Plugin file will close it.
         }
 
         public override void Draw()
