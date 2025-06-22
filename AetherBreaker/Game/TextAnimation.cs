@@ -80,7 +80,7 @@ public class TextAnimation
 
         if (this.Type == TextAnimationType.FloatAndFade)
         {
-            this.velocity = new Vector2(0, -50f); // Move upwards
+            this.velocity = new Vector2(0, -1f); // Move upwards
         }
     }
 

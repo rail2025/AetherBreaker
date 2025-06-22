@@ -314,6 +314,23 @@ public class GameSession
             this.Score += clearResult.TotalScore;
         }
 
+        var clearedChests = clearResult.PoppedBubbles.Concat(clearResult.DroppedBubbles)
+                                                 .Where(b => b.BubbleType == GameBoard.ChestType)
+                                                 .ToList();
+
+        if (clearedChests.Any())
+        {
+            var chest = clearedChests.First(); // Use the first chest's position for the text
+            int trackNumber = this.CurrentStage / 10;
+            if (trackNumber > 0)
+            {
+                this.audioManager.PlaySfx("chest.wav");
+                this.audioManager.UnlockBonusTrack(trackNumber);
+                var text = $"Bonus Music track #{trackNumber} discovered!";
+                this.ActiveTextAnimations.Add(new TextAnimation(text, chest.Position, 0xFF00D4FF, 3.0f, TextAnimationType.FadeOut, 1.8f));
+            }
+        }
+
         if (clearResult.HelperLineActivated)
         {
             this.IsHelperLineActiveForStage = true;

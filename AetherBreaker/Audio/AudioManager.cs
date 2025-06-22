@@ -15,6 +15,7 @@ public class AudioManager : IDisposable
     private WaveOutEvent? bgmOutputDevice;
     private Mp3FileReader? bgmFileReader;
 
+    private readonly List<string> allMusicTracks = new();
     private readonly List<string> bgmPlaylist = new();
     private int currentTrackIndex = -1;
     private bool isBgmPlaying = false;
@@ -75,14 +76,10 @@ public class AudioManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Sets the volume for the BGM.
-    /// </summary>
     public void SetMusicVolume(float volume)
     {
         if (this.bgmOutputDevice != null)
         {
-            // NAudio Volume is 0.0 to 1.0
             this.bgmOutputDevice.Volume = Math.Clamp(volume, 0f, 1f);
         }
     }
@@ -91,19 +88,67 @@ public class AudioManager : IDisposable
     {
         var assembly = Assembly.GetExecutingAssembly();
         const string resourcePrefix = "AetherBreaker.Music.";
-        this.bgmPlaylist.AddRange(
+        this.allMusicTracks.AddRange(
             assembly.GetManifestResourceNames()
                 .Where(r => r.StartsWith(resourcePrefix) && r.EndsWith(".mp3"))
                 .Select(r => r.Substring(resourcePrefix.Length))
+                .OrderBy(r => r)
         );
     }
 
     public void StartBgmPlaylist()
     {
+        this.bgmPlaylist.Clear();
+        var defaultTracks = this.allMusicTracks.Where(t => !t.StartsWith("bonus_")).ToList();
+        this.bgmPlaylist.AddRange(defaultTracks);
+
+        // Load any tracks that were previously unlocked from the config file
+        foreach (var trackNumber in this.configuration.UnlockedBonusTracks)
+        {
+            var trackName = $"bonus_{trackNumber}.mp3";
+            if (this.allMusicTracks.Contains(trackName) && !this.bgmPlaylist.Contains(trackName))
+            {
+                this.bgmPlaylist.Add(trackName);
+            }
+        }
+
         isBgmPlaying = true;
         if (this.configuration.IsBgmMuted || !this.bgmPlaylist.Any()) return;
         currentTrackIndex = 0;
         PlayTrack(currentTrackIndex);
+    }
+
+    public void UnlockBonusTrack(int trackNumber)
+    {
+        var trackName = $"bonus_{trackNumber}.mp3";
+        // Check if the track exists and isn't already in the playlist
+        if (this.allMusicTracks.Contains(trackName) && !this.bgmPlaylist.Contains(trackName))
+        {
+            this.bgmPlaylist.Add(trackName);
+            // Add the track number to the configuration and save it
+            if (this.configuration.UnlockedBonusTracks.Add(trackNumber))
+            {
+                this.configuration.Save();
+            }
+        }
+    }
+
+    public void PlayNextTrack()
+    {
+        if (!this.bgmPlaylist.Any()) return;
+        this.currentTrackIndex = (this.currentTrackIndex + 1) % this.bgmPlaylist.Count;
+        PlayTrack(this.currentTrackIndex);
+    }
+
+    public void PlayPreviousTrack()
+    {
+        if (!this.bgmPlaylist.Any()) return;
+        this.currentTrackIndex--;
+        if (this.currentTrackIndex < 0)
+        {
+            this.currentTrackIndex = this.bgmPlaylist.Count - 1;
+        }
+        PlayTrack(this.currentTrackIndex);
     }
 
     private void PlayTrack(int trackIndex)
@@ -127,7 +172,6 @@ public class AudioManager : IDisposable
             this.bgmOutputDevice = new WaveOutEvent();
             this.bgmOutputDevice.PlaybackStopped += OnBgmPlaybackStopped;
             this.bgmOutputDevice.Init(this.bgmFileReader);
-            // Apply volume when track starts
             this.bgmOutputDevice.Volume = this.configuration.MusicVolume;
             this.bgmOutputDevice.Play();
         }
@@ -157,7 +201,6 @@ public class AudioManager : IDisposable
         }
         else
         {
-            // Set volume before resuming, in case it changed while muted
             if (this.bgmOutputDevice != null) this.bgmOutputDevice.Volume = this.configuration.MusicVolume;
 
             if (this.bgmOutputDevice?.PlaybackState == PlaybackState.Paused)
@@ -180,9 +223,6 @@ public class AudioManager : IDisposable
         this.bgmFileReader = null;
     }
 
-    /// <summary>
-    /// Fully stops the BGM and resets the playlist state. Called when closing the window.
-    /// </summary>
     public void EndPlaylist()
     {
         this.isBgmPlaying = false;

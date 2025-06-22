@@ -107,7 +107,6 @@ public class GameBoard
                 var angle = MathF.PI / 3f * i;
                 var neighborPos = bubble.Position + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * GridSpacing;
 
-                // Round the position to snap it to the theoretical grid, preventing floating point errors
                 int row = (int)Math.Round((neighborPos.Y - this.ceilingY) / (GridSpacing * (MathF.Sqrt(3) / 2f)));
                 var gridX = (float)Math.Round((neighborPos.X - BubbleRadius - (row % 2 == 1 ? BubbleRadius : 0)) / GridSpacing);
                 var snappedNeighborPos = new Vector2(
@@ -127,7 +126,6 @@ public class GameBoard
             return landingPosition; // Fallback, should rarely happen
         }
 
-        // Return the closest valid, stickable slot to the landing position
         return stickableSlots.OrderBy(slot => Vector2.Distance(landingPosition, slot)).First();
     }
 
@@ -216,9 +214,12 @@ public class GameBoard
             var neighbors = connected.SelectMany(GetNeighbors).Distinct().ToList();
             var bystanderBombs = neighbors.Where(n => n.BubbleType == BombType).ToList();
             var bystanderPowerUps = neighbors.Where(n => n.BubbleType == PowerUpType).ToList();
+            var bystanderChests = neighbors.Where(n => n.BubbleType == ChestType).ToList(); // Find bystander chests
+
             foreach (var bubble in connected)
                 this.Bubbles.Remove(bubble);
             result.PoppedBubbles.AddRange(connected);
+
             if (bystanderPowerUps.Any())
             {
                 result.HelperLineActivated = true;
@@ -230,6 +231,19 @@ public class GameBoard
                     }
                 }
             }
+
+            if (bystanderChests.Any())
+            {
+                foreach (var chest in bystanderChests)
+                {
+                    if (this.Bubbles.Remove(chest))
+                    {
+                        result.PoppedBubbles.Add(chest);
+                    }
+                }
+            }
+            
+
             if (bystanderBombs.Any())
             {
                 foreach (var bomb in bystanderBombs)
@@ -443,6 +457,16 @@ public class GameBoard
                 mirrorCandidates.Remove(mirrorBubble);
                 mirrorBubble.BubbleType = MirrorType;
                 mirrorBubble.Color = GetBubbleDetails(MirrorType).Color;
+            }
+        }
+        if (stage > 0 && stage % 10 == 0 && stage <= 50)
+        {
+            var chestCandidates = tempBubbles.Where(b => b.BubbleType >= 0).ToList();
+            if (chestCandidates.Any())
+            {
+                var chestBubble = chestCandidates[this.random.Next(chestCandidates.Count)];
+                chestBubble.BubbleType = ChestType;
+                chestBubble.Color = GetBubbleDetails(ChestType).Color;
             }
         }
     }

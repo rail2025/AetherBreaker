@@ -345,16 +345,27 @@ public class MainWindow : Window, IDisposable
         var abstractVelocity = direction * 60f;
         var abstractBubbleRadius = nextBubble.Radius;
         var pathPoints = PredictHelperLinePath(gameBoard, abstractStartPos, abstractVelocity, abstractBubbleRadius);
-        uint color = (uint)0x4DFFFFFF;
+        // This is the new code block for a purple line with a white outline
         var scale = ImGuiHelpers.GlobalScale;
-        // CHANGE: Increased thickness of aiming line.
+        uint whiteColor = 0xFFFFFFFF;
+        uint purpleColor = 0xFFC000C0; // A nice purple color
+
         for (int i = 0; i < pathPoints.Count - 1; i++)
         {
-            drawList.AddLine(contentOrigin + pathPoints[i] * pixelsPerUnit, contentOrigin + pathPoints[i + 1] * pixelsPerUnit, color, 3f * scale);
+            var startPoint = contentOrigin + pathPoints[i] * pixelsPerUnit;
+            var endPoint = contentOrigin + pathPoints[i + 1] * pixelsPerUnit;
+
+            // 1. Draw the thicker white line for the outline
+            drawList.AddLine(startPoint, endPoint, whiteColor, 5f * scale);
+
+            // 2. Draw the slightly thinner purple line on top
+            drawList.AddLine(startPoint, endPoint, purpleColor, 3f * scale);
         }
+
+        // Also update the circle at the end of the line to be purple
         var lastPoint = pathPoints.LastOrDefault();
         var snappedPosition = gameBoard.GetSnappedPosition(lastPoint, null);
-        drawList.AddCircle(contentOrigin + snappedPosition * pixelsPerUnit, abstractBubbleRadius * pixelsPerUnit, (uint)0x66FFFFFF, 12, 2f * scale);
+        drawList.AddCircle(contentOrigin + snappedPosition * pixelsPerUnit, abstractBubbleRadius * pixelsPerUnit, purpleColor, 12, 2f * scale);
     }
 
     private void DrawHelperLine(MultiplayerGameBoard? gameBoard, ImDrawListPtr drawList, Vector2 direction, Vector2 contentOrigin, float pixelsPerUnit, Bubble nextBubble)
@@ -364,16 +375,27 @@ public class MainWindow : Window, IDisposable
         var abstractVelocity = direction * 60f;
         var abstractBubbleRadius = nextBubble.Radius;
         var pathPoints = PredictHelperLinePath(gameBoard, abstractStartPos, abstractVelocity, abstractBubbleRadius);
-        uint color = (uint)0x4DFFFFFF;
+        // This is the new code block for a purple line with a white outline
         var scale = ImGuiHelpers.GlobalScale;
-        // CHANGE: Increased thickness of aiming line.
+        uint whiteColor = 0xFFFFFFFF;
+        uint purpleColor = 0xFFC000C0; // A nice purple color
+
         for (int i = 0; i < pathPoints.Count - 1; i++)
         {
-            drawList.AddLine(contentOrigin + pathPoints[i] * pixelsPerUnit, contentOrigin + pathPoints[i + 1] * pixelsPerUnit, color, 3f * scale);
+            var startPoint = contentOrigin + pathPoints[i] * pixelsPerUnit;
+            var endPoint = contentOrigin + pathPoints[i + 1] * pixelsPerUnit;
+
+            // 1. Draw the thicker white line for the outline
+            drawList.AddLine(startPoint, endPoint, whiteColor, 5f * scale);
+
+            // 2. Draw the slightly thinner purple line on top
+            drawList.AddLine(startPoint, endPoint, purpleColor, 3f * scale);
         }
+
+        // Also update the circle at the end of the line to be purple
         var lastPoint = pathPoints.LastOrDefault();
         var snappedPosition = gameBoard.GetSnappedPosition(lastPoint, null);
-        drawList.AddCircle(contentOrigin + snappedPosition * pixelsPerUnit, abstractBubbleRadius * pixelsPerUnit, (uint)0x66FFFFFF, 12, 2f * scale);
+        drawList.AddCircle(contentOrigin + snappedPosition * pixelsPerUnit, abstractBubbleRadius * pixelsPerUnit, purpleColor, 12, 2f * scale);
     }
 
     private List<Vector2> PredictHelperLinePath(GameBoard gameBoard, Vector2 startPos, Vector2 velocity, float bubbleRadius)

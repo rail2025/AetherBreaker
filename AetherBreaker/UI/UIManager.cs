@@ -89,26 +89,27 @@ public static class UIManager
         ImGui.Columns(3, "hudColumns", false);
 
         var leftColumnWidth = 220 * globalScale;
-        var rightColumnWidth = 100 * globalScale;
+        var rightColumnWidth = 120 * globalScale;
         var centerColumnWidth = availableWidth - leftColumnWidth - rightColumnWidth;
 
         ImGui.SetColumnWidth(0, leftColumnWidth);
         ImGui.SetColumnWidth(1, centerColumnWidth);
         ImGui.SetColumnWidth(2, rightColumnWidth);
 
+        // --- Left Column ---
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 10 * globalScale);
         ImGui.BeginGroup();
 
         ImGui.Text($"High Score: {plugin.Configuration.HighScore}");
         ImGui.Text($"Score: {session.Score}");
+
         ImGui.Text($"Stage: {session.CurrentStage}");
 
-        // CHANGE: "Clear Stage" debug button added for easier testing.
-       // if (ImGui.Button("Debug: Clear Stage"))
-        //{
-        //    session.Debug_ClearStage();
-        //}
+        // Music track buttons moved here
         ImGui.SameLine();
+        if (ImGui.Button("<<##PrevTrack")) { audioManager.PlayPreviousTrack(); }
+        ImGui.SameLine();
+        if (ImGui.Button(">>##NextTrack")) { audioManager.PlayNextTrack(); }
 
         var settingsButtonSize = new Vector2(80, 25) * globalScale;
         if (ImGui.Button("Settings", settingsButtonSize))
@@ -138,12 +139,21 @@ public static class UIManager
 
         ImGui.EndGroup();
 
-        ImGui.NextColumn();
+        // --- Center Column (Spacer) ---
         ImGui.NextColumn();
 
+        // --- Right Column ---
+        ImGui.NextColumn();
         ImGui.Spacing();
         ImGui.Text($"Shots: {session.ShotsUntilDrop}");
         ImGui.Text($"Time: {session.TimeUntilDrop:F1}s");
+
+        /* The "Debug: Clear Stage" button, moved here and commented out.
+        if (ImGui.Button("Clear"))
+        {
+            session.Debug_ClearStage();
+        }
+        */
 
         ImGui.Columns(1);
     }

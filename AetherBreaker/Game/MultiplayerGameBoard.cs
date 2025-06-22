@@ -133,6 +133,8 @@ public class MultiplayerGameBoard
 
         AddPowerUpsToBubbleList(newRow);
         this.Bubbles.AddRange(newRow);
+
+        
     }
 
     public void AddJunkToBottom(int junkBubbleCount)
@@ -251,7 +253,27 @@ public class MultiplayerGameBoard
     private Vector2 GetClosestTheoreticalSlot(Vector2 position)
     {
         int row = (int)Math.Round((position.Y - this.ceilingY) / (GridSpacing * (MathF.Sqrt(3) / 2f)));
-        float xOffset = (row % 2 == 1) ? BubbleRadius : 0;
+
+        // --- Start of Fix ---
+        // Determine the stagger of the CURRENT top row (row 0).
+        // The 'nextRowIsStaggered' flag tells us the stagger for the *next* row to be created,
+        // which is the opposite of the current top row's stagger.
+        bool isTopRowStaggered = !this.nextRowIsStaggered;
+
+        // Determine if the target row should be staggered based on the top row's stagger.
+        bool isTargetRowStaggered;
+        if (isTopRowStaggered)
+        {
+            isTargetRowStaggered = (row % 2 == 0); // If top is staggered, all even rows are.
+        }
+        else
+        {
+            isTargetRowStaggered = (row % 2 != 0); // If top is not, all odd rows are.
+        }
+
+        float xOffset = isTargetRowStaggered ? BubbleRadius : 0;
+        // --- End of Fix ---
+
         var gridX = (float)Math.Round((position.X - xOffset - BubbleRadius) / GridSpacing);
 
         var x = (gridX * GridSpacing) + BubbleRadius + xOffset;

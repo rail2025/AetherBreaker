@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/12.0.2">
   <PropertyGroup>
-    <Version>2.0.0.0</Version>
+    <Version>2.1.0.0</Version>
     <Description>A game to play when dead. Open with /abreaker.</Description>
     <PackageProjectUrl>https://github.com/goatcorp/SamplePlugin</PackageProjectUrl>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
@@ -15,10 +15,7 @@
     <EmbeddedResource Include="Music\bgm1.mp3" />
     <EmbeddedResource Include="Music\bgm2.mp3" />
     <EmbeddedResource Include="Music\bgm5Hotw.mp3" />
-    <EmbeddedResource Include="Music\bgm7HD.mp3" />
-    <EmbeddedResource Include="Music\bgm3Pfm.mp3" />
     <EmbeddedResource Include="Music\bgm4GQ.mp3" />
-    <EmbeddedResource Include="Music\bgm6MGQ.mp3" />
     <EmbeddedResource Include="Images\icon.png" />
     <EmbeddedResource Include="Images\bomb.png" />
     <EmbeddedResource Include="Images\chocobo.png" />
@@ -29,6 +26,15 @@
     <EmbeddedResource Include="Images\mirror.png" />
     <EmbeddedResource Include="Images\paint.png" />
     <EmbeddedResource Include="Images\star.png" />
+    <Content Include="Music\bgm3.mp3" />
+    <EmbeddedResource Include="Sfx\chest.wav" />
+    <EmbeddedResource Include="Music\bgm6MR.mp3" />
+    <EmbeddedResource Include="Music\bgm7Pfm.mp3" />
+    <EmbeddedResource Include="Music\bonus_1.mp3" />
+    <EmbeddedResource Include="Music\bonus_2.mp3" />
+    <EmbeddedResource Include="Music\bonus_3.mp3" />
+    <EmbeddedResource Include="Music\bonus_4.mp3" />
+    <EmbeddedResource Include="Music\bonus_5.mp3" />
     <Content Include="repo.json" />
     <EmbeddedResource Include="Sfx\bomb.mp3" />
     <EmbeddedResource Include="Sfx\clearstage.mp3" />

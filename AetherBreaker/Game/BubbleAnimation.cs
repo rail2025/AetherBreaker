@@ -38,7 +38,7 @@ public class BubbleAnimation
         this.Type = type;
         this.startTime = (float)ImGui.GetTime();
         this.duration = duration;
-        this.velocity = new Vector2(0f, 400f);
+        this.velocity = new Vector2(0f, 30f);
     }
 
     /// <summary>
@@ -55,7 +55,7 @@ public class BubbleAnimation
         if (this.Type == BubbleAnimationType.Drop)
         {
             // Use the passed-in deltaTime instead of fetching it from ImGui.
-            this.velocity.Y += 2000f * deltaTime;
+            this.velocity.Y += 10f * deltaTime;
             for (int i = 0; i < this.AnimatedBubbles.Count; i++)
             {
                 var bubble = this.AnimatedBubbles[i];
