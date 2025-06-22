@@ -1,5 +1,7 @@
 # AetherBreaker
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/rail2025/AetherBreaker/total)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/rail2025/AetherBreaker/total) <br>
+![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/rail2025/AetherBreaker/latest/total?label=People%20that%20are%20actually%20waiting%20for%20a%20CookieClicker%20clone%3A)
+
 
 Shoot aether when dead.
 
