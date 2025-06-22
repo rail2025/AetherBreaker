@@ -4,11 +4,11 @@
         "Name": "AetherBreaker",
         "Punchline": "A game to play when dead.",
         "Description": "Opens on death, or /abreaker. A Puzzle Bobble clone mini-game.",
-        "Changelog": "v1.3.0.0: Added Save/Continue feature and advanced game-opening triggers. Overhauled UI to support global scaling. Increased difficulty in later stages with more starting rows and fewer shots.",
+        "Changelog": "v2.0.0.0: Major architectural rework to fix all UI scaling issues.\n- Decoupled game logic from rendering using an abstract unit system.\n- Fixed numerous gameplay bugs including the star power-up, bubble snapping/overlap, and multiplayer junk/refill logic.\n- Added single-player difficulty ramp (fewer colors on early stages).\n- Enabled aiming helper line by default for the first two stages.",
         "IsHide": false,
         "InternalName": "AetherBreaker",
-        "AssemblyVersion": "1.3.0.0",
-        "TestingAssemblyVersion": "1.3.0.0",
+        "AssemblyVersion": "2.0.0.0",
+        "TestingAssemblyVersion": "2.0.0.0",
         "IsTestingExclusive": false,
         "RepoUrl": "https://github.com/rail2025/AetherBreaker",
         "ApplicableVersion": "any",
@@ -19,11 +19,11 @@
         ],
         "DalamudApiLevel": 12,
         "TestingDalamudApiLevel": 12,
-        "DownloadLinkInstall": "https://github.com/rail2025/AetherBreaker/releases/download/v1.3.0.0/latest.zip",
-        "DownloadLinkUpdate": "https://github.com/rail2025/AetherBreaker/releases/download/v1.3.0.0/latest.zip",
-        "DownloadLinkTesting": "https://github.com/rail2025/AetherBreaker/releases/download/v1.3.0.0/latest.zip",
+        "DownloadLinkInstall": "https://github.com/rail2025/AetherBreaker/releases/download/v2.0.0.0/latest.zip",
+        "DownloadLinkUpdate": "https://github.com/rail2025/AetherBreaker/releases/download/v2.0.0.0/latest.zip",
+        "DownloadLinkTesting": "https://github.com/rail2025/AetherBreaker/releases/download/v2.0.0.0/latest.zip",
         "LoadPriority": 0,
         "SupportsProfiles": true,
-        "IconUrl": "https://raw.githubusercontent.com/rail2025/AetherDraw/refs/heads/master/icon.png"
+        "IconUrl": "https://raw.githubusercontent.com/rail2025/AetherBreaker/refs/heads/master/icon.png"
     }
 ]
