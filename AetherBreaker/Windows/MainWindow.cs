@@ -157,7 +157,7 @@ public class MainWindow : Window, IDisposable
         UpdateAndDrawBubbleAnimations(drawList, contentOrigin, session.ActiveBubbleAnimations, pixelsPerUnit);
         UpdateAndDrawTextAnimations(drawList, contentOrigin, session.ActiveTextAnimations, pixelsPerUnit);
         UIManager.DrawGameUI(drawList, hudAreaPos, session, this.plugin, this.audioManager, this.textureManager, availableWidth);
-        DrawDebugInfo(drawList, pixelsPerUnit, session);
+       // DrawDebugInfo(drawList, pixelsPerUnit, session);
     }
 
     private void DrawInGame(MultiplayerGameSession session)
@@ -473,26 +473,26 @@ public class MainWindow : Window, IDisposable
         }
     }
 
-    private void DrawDebugInfo(ImDrawListPtr drawList, float pixelsPerUnit, GameSession session)
-    {
-        if (session.GameBoard == null) return;
-        var scale = ImGuiHelpers.GlobalScale;
-        ImGui.SetCursorPos(new Vector2(ImGui.GetWindowContentRegionMax().X - 220 * scale, 10 * scale));
+   // private void DrawDebugInfo(ImDrawListPtr drawList, float pixelsPerUnit, GameSession session)
+    //{
+     //   if (session.GameBoard == null) return;
+      //  var scale = ImGuiHelpers.GlobalScale;
+       // ImGui.SetCursorPos(new Vector2(ImGui.GetWindowContentRegionMax().X - 220 * scale, 10 * scale));
 
-        var firstBubble = session.GameBoard.Bubbles.FirstOrDefault();
+        //var firstBubble = session.GameBoard.Bubbles.FirstOrDefault();
 
-        ImGui.BeginGroup();
-        ImGui.Text($"--- DEBUG INFO ---");
-        ImGui.Text($"Global Scale: {scale:F2}");
-        ImGui.Text($"Pixels Per Unit: {pixelsPerUnit:F2}");
-        ImGui.Text($"Board Abstract W: {session.GameBoard.AbstractWidth:F2}");
-        if (firstBubble != null)
-        {
-            ImGui.Text($"First Bubble Abstract: {firstBubble.Position.X:F1}, {firstBubble.Position.Y:F1}");
-            ImGui.Text($"First Bubble Scaled: {(int)(firstBubble.Position.X * pixelsPerUnit)}, {(int)(firstBubble.Position.Y * pixelsPerUnit)}");
-        }
-        ImGui.EndGroup();
-    }
+//        ImGui.BeginGroup();
+  //      ImGui.Text($"--- DEBUG INFO ---");
+    //    ImGui.Text($"Global Scale: {scale:F2}");
+      //  ImGui.Text($"Pixels Per Unit: {pixelsPerUnit:F2}");
+        //ImGui.Text($"Board Abstract W: {session.GameBoard.AbstractWidth:F2}");
+        //if (firstBubble != null)
+        //{
+         //   ImGui.Text($"First Bubble Abstract: {firstBubble.Position.X:F1}, {firstBubble.Position.Y:F1}");
+          //  ImGui.Text($"First Bubble Scaled: {(int)(firstBubble.Position.X * pixelsPerUnit)}, {(int)(firstBubble.Position.Y * pixelsPerUnit)}");
+        //}
+        //ImGui.EndGroup();
+    //}
 
     //private void DrawDebugInfo(ImDrawListPtr drawList, float pixelsPerUnit, MultiplayerGameSession session)
     //{
