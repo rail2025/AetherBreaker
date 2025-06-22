@@ -103,6 +103,13 @@ public static class UIManager
         ImGui.Text($"Score: {session.Score}");
         ImGui.Text($"Stage: {session.CurrentStage}");
 
+        // CHANGE: "Clear Stage" debug button added for easier testing.
+       // if (ImGui.Button("Debug: Clear Stage"))
+        //{
+        //    session.Debug_ClearStage();
+        //}
+        ImGui.SameLine();
+
         var settingsButtonSize = new Vector2(80, 25) * globalScale;
         if (ImGui.Button("Settings", settingsButtonSize))
         {
@@ -174,7 +181,7 @@ public static class UIManager
         // --- Right Group (Minimap) ---
         var rightColumnWidth = 150f * globalScale;
         var previewAreaSize = new Vector2(rightColumnWidth - (20 * globalScale), (MainWindow.HudAreaHeight * globalScale) - (10 * globalScale));
-        var previewAreaScreenPosX = windowPos.X + contentMin.X + availableWidth - rightColumnWidth + (10 * globalScale);
+        var previewAreaScreenPosX = windowPos.X + contentMin.X + availableWidth - rightColumnWidth;
         var previewAreaScreenPosY = hudAreaPos.Y + (5 * globalScale);
         var previewAreaPos = new Vector2(previewAreaScreenPosX, previewAreaScreenPosY);
 

@@ -25,7 +25,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPartyList? PartyList { get; private set; } = null!;
 
     private const string CommandName = "/abreaker";
-    private const string SecondWindowCommandName = "/abreaker2";
+   // private const string SecondWindowCommandName = "/abreaker2";
 
     public Configuration Configuration { get; init; }
     public NetworkManager NetworkManager { get; init; }
@@ -64,10 +64,10 @@ public sealed class Plugin : IDalamudPlugin
             HelpMessage = "Opens the AetherBreaker game window."
         });
 
-        CommandManager.AddHandler(SecondWindowCommandName, new CommandInfo(OnSecondWindowCommand)
-        {
+       // CommandManager.AddHandler(SecondWindowCommandName, new CommandInfo(OnSecondWindowCommand)
+        //{
            // HelpMessage = "Opens a second AetherBreaker window for testing."
-        });
+        //});
 
         ClientState.TerritoryChanged += OnTerritoryChanged;
         Condition.ConditionChange += OnConditionChanged;
@@ -95,7 +95,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUI;
 
         CommandManager.RemoveHandler(CommandName);
-        CommandManager.RemoveHandler(SecondWindowCommandName);
+        //CommandManager.RemoveHandler(SecondWindowCommandName);
 
         this.WindowSystem.RemoveAllWindows();
         ConfigWindow.Dispose();

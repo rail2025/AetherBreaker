@@ -5,19 +5,13 @@ using System.Numerics;
 
 namespace AetherBreaker.Game;
 
-/// <summary>
-/// Manages the state and layout of the bubble grid using an abstract, unit-based coordinate system.
-/// This class has no knowledge of pixels or UI scaling.
-/// </summary>
 public class GameBoard
 {
     public List<Bubble> Bubbles { get; private set; } = new();
 
-    // The abstract, unscaled dimensions of the game board.
     public float AbstractWidth { get; private set; }
     public float AbstractHeight { get; private set; }
 
-    // Internal abstract units.
     private const float BubbleRadius = 1.0f;
     private const float GridSpacing = 2.0f;
 
@@ -47,10 +41,10 @@ public class GameBoard
 
         this.allBubbleColorTypes = new[]
         {
-            (Color: 4280221439, Type: 0), // Red
-            (Color: 4280123647, Type: 1), // Green
-            (Color: 4294901760, Type: 2), // Blue
-            (Color: 4280252415, Type: 3)  // Yellow
+            ((uint)0xFF2727F5, 0), // Red
+            ((uint)0xFF22B922, 1), // Green
+            ((uint)0xFFD3B01A, 2), // Blue
+            ((uint)0xFF1AD3D3, 3)  // Yellow
         };
     }
 
@@ -58,7 +52,14 @@ public class GameBoard
     {
         this.Bubbles.Clear();
         this.ceilingY = BubbleRadius;
-        var tempBubbles = new List<Bubble>();
+
+        List<(uint Color, int Type)> allowedColorList = new();
+        switch (stage)
+        {
+            case 1: allowedColorList.AddRange(allBubbleColorTypes.Take(2)); break;
+            case 2: allowedColorList.AddRange(allBubbleColorTypes.Take(3)); break;
+            default: allowedColorList.AddRange(allBubbleColorTypes); break;
+        }
 
         var numRows = 5;
         if (this.gameBoardWidthInBubbles == 7) numRows = 4;
@@ -71,54 +72,69 @@ public class GameBoard
             for (var col = 0; col < bubblesInThisRow; col++)
             {
                 var x = (col * GridSpacing) + BubbleRadius + (row % 2 == 1 ? BubbleRadius : 0);
-                var y = row * (GridSpacing * 0.866f) + this.ceilingY;
-                var bubbleType = this.allBubbleColorTypes[this.random.Next(this.allBubbleColorTypes.Length)];
-                tempBubbles.Add(new Bubble(new Vector2(x, y), Vector2.Zero, BubbleRadius, bubbleType.Color, bubbleType.Type));
+                var y = row * (GridSpacing * (MathF.Sqrt(3) / 2f)) + this.ceilingY;
+                var bubbleType = allowedColorList[this.random.Next(allowedColorList.Count)];
+                this.Bubbles.Add(new Bubble(new Vector2(x, y), Vector2.Zero, BubbleRadius, bubbleType.Color, bubbleType.Type));
             }
         }
 
-        this.AbstractHeight = (numRows - 1) * (GridSpacing * 0.866f) + (2 * BubbleRadius);
-
-        AddSpecialBubblesToBoard(stage, tempBubbles);
-        this.Bubbles = tempBubbles;
+        this.AbstractHeight = (numRows > 0 ? (numRows - 1) * (GridSpacing * (MathF.Sqrt(3) / 2f)) : 0) + (2 * BubbleRadius);
+        AddSpecialBubblesToBoard(stage, this.Bubbles);
     }
 
     public Vector2 GetSnappedPosition(Vector2 landingPosition, Bubble? collidedWith)
     {
-        var nearbyBubbles = this.Bubbles.Where(b => Vector2.Distance(b.Position, landingPosition) < GridSpacing * 1.5f);
-        var closestBubble = collidedWith ?? nearbyBubbles.OrderBy(b => Vector2.Distance(b.Position, landingPosition)).FirstOrDefault();
+        var occupiedSlots = this.Bubbles.Select(b => b.Position).ToHashSet();
+        var stickableSlots = new HashSet<Vector2>();
 
-        if (closestBubble == null || closestBubble == this.CeilingBubble)
+        // Add the top row as valid snapping positions
+        for (var col = 0; col < this.gameBoardWidthInBubbles; col++)
         {
-            var gridX = (float)Math.Round((landingPosition.X - BubbleRadius) / GridSpacing);
-            int row = (int)Math.Round((landingPosition.Y - this.ceilingY) / (GridSpacing * 0.866f));
-            var x = (gridX * GridSpacing) + BubbleRadius + (row % 2 == 1 ? BubbleRadius : 0);
-            return new Vector2(x, landingPosition.Y); // Snap X, keep Y for ceiling collision check
+            var x = (col * GridSpacing) + BubbleRadius;
+            var y = this.ceilingY;
+            var slot = new Vector2(x, y);
+            if (!occupiedSlots.Contains(slot))
+            {
+                stickableSlots.Add(slot);
+            }
         }
 
-        Vector2 bestPosition = landingPosition;
-        float closestDist = float.MaxValue;
-        for (int i = 0; i < 6; i++)
+        // Find all empty slots that are adjacent to any existing bubble
+        foreach (var bubble in this.Bubbles)
         {
-            var angle = MathF.PI / 3f * i;
-            var neighborPos = closestBubble.Position + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * GridSpacing;
-            if (!this.Bubbles.Any(b => Vector2.Distance(b.Position, neighborPos) < GridSpacing * 0.9f))
+            for (int i = 0; i < 6; i++)
             {
-                float dist = Vector2.Distance(landingPosition, neighborPos);
-                if (dist < closestDist)
+                var angle = MathF.PI / 3f * i;
+                var neighborPos = bubble.Position + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * GridSpacing;
+
+                // Round the position to snap it to the theoretical grid, preventing floating point errors
+                int row = (int)Math.Round((neighborPos.Y - this.ceilingY) / (GridSpacing * (MathF.Sqrt(3) / 2f)));
+                var gridX = (float)Math.Round((neighborPos.X - BubbleRadius - (row % 2 == 1 ? BubbleRadius : 0)) / GridSpacing);
+                var snappedNeighborPos = new Vector2(
+                    (gridX * GridSpacing) + BubbleRadius + (row % 2 == 1 ? BubbleRadius : 0),
+                    row * (GridSpacing * (MathF.Sqrt(3) / 2f)) + this.ceilingY
+                );
+
+                if (!occupiedSlots.Contains(snappedNeighborPos))
                 {
-                    closestDist = dist;
-                    bestPosition = neighborPos;
+                    stickableSlots.Add(snappedNeighborPos);
                 }
             }
         }
-        return bestPosition;
+
+        if (!stickableSlots.Any())
+        {
+            return landingPosition; // Fallback, should rarely happen
+        }
+
+        // Return the closest valid, stickable slot to the landing position
+        return stickableSlots.OrderBy(slot => Vector2.Distance(landingPosition, slot)).First();
     }
 
     public void AddJunkRows(int rowCount)
     {
         if (rowCount <= 0) return;
-        float yOffset = rowCount * (GridSpacing * 0.866f);
+        float yOffset = rowCount * (GridSpacing * (MathF.Sqrt(3) / 2f));
         foreach (var bubble in this.Bubbles)
         {
             bubble.Position.Y += yOffset;
@@ -132,8 +148,8 @@ public class GameBoard
             for (var col = 0; col < bubblesInThisRow; col++)
             {
                 var x = (col * GridSpacing) + BubbleRadius + (row % 2 == 1 ? BubbleRadius : 0);
-                var y = (row * (GridSpacing * 0.866f)) + BubbleRadius;
-                var junkBubble = new Bubble(new Vector2(x, y), Vector2.Zero, BubbleRadius, 4283552895, -1);
+                var y = (row * (GridSpacing * (MathF.Sqrt(3) / 2f))) + BubbleRadius;
+                var junkBubble = new Bubble(new Vector2(x, y), Vector2.Zero, BubbleRadius, (uint)0xFF808080, -1);
                 this.Bubbles.Add(junkBubble);
             }
         }
@@ -141,7 +157,7 @@ public class GameBoard
 
     public List<Bubble> AdvanceCeiling()
     {
-        var dropDistance = GridSpacing * 0.866f;
+        var dropDistance = GridSpacing * (MathF.Sqrt(3) / 2f);
         this.ceilingY += dropDistance;
         this.AbstractHeight += dropDistance;
         foreach (var bubble in this.Bubbles)
@@ -153,7 +169,9 @@ public class GameBoard
     {
         if (activeBubble.Position.Y - activeBubble.Radius <= this.ceilingY)
             return this.CeilingBubble;
-        return this.Bubbles.FirstOrDefault(bubble => Vector2.Distance(activeBubble.Position, bubble.Position) < GridSpacing);
+
+        var candidates = this.Bubbles.Where(b => Vector2.Distance(activeBubble.Position, b.Position) < GridSpacing);
+        return candidates.OrderBy(b => Vector2.Distance(activeBubble.Position, b.Position)).FirstOrDefault();
     }
 
     public List<Bubble> DetonateBomb(Vector2 bombPosition)
@@ -285,6 +303,10 @@ public class GameBoard
 
     public float GetBubbleRadius() => BubbleRadius;
 
+    public float GetCeilingY() => this.ceilingY;
+
+    public (uint Color, int Type)[] GetAllBubbleColorTypes() => this.allBubbleColorTypes;
+
     public List<Bubble> ClearBubblesByType(int bubbleType)
     {
         var bubblesToClear = this.Bubbles.Where(b => b.BubbleType == bubbleType).ToList();
@@ -335,13 +357,13 @@ public class GameBoard
         }
         switch (bubbleType)
         {
-            case PowerUpType: return (4289864447, PowerUpType);
-            case BombType: return (4280153855, BombType);
-            case StarType: return (4280252159, StarType);
-            case PaintType: return (4294934527, PaintType);
-            case MirrorType: return (4294309324, MirrorType);
-            case ChestType: return (4282343014, ChestType);
-            case -1: return (4280197401, -1);
+            case PowerUpType: return ((uint)0xFFC000C0, PowerUpType);
+            case BombType: return ((uint)0xFF1F75E6, BombType);
+            case StarType: return ((uint)0xFF24C5F5, StarType);
+            case PaintType: return ((uint)0xFF9A5CF5, PaintType);
+            case MirrorType: return ((uint)0xFFCCCCCC, MirrorType);
+            case ChestType: return ((uint)0xFF3C64A8, ChestType);
+            case -1: return ((uint)0xFF000000, -1);
             default: return (this.allBubbleColorTypes[0].Color, this.allBubbleColorTypes[0].Type);
         }
     }
@@ -350,7 +372,7 @@ public class GameBoard
     {
         if (stage >= 3)
         {
-            var middleRowY = (2 * (GridSpacing * 0.866f)) + this.ceilingY;
+            var middleRowY = (2 * (GridSpacing * (MathF.Sqrt(3) / 2f))) + this.ceilingY;
             var lowerHalfCandidates = tempBubbles.Where(b => b.Position.Y > middleRowY).ToList();
             if (lowerHalfCandidates.Any())
             {

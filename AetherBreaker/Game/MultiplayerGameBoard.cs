@@ -6,9 +6,6 @@ using System.Numerics;
 
 namespace AetherBreaker.Game;
 
-/// <summary>
-/// Manages the multiplayer game board using an abstract, unit-based coordinate system.
-/// </summary>
 public class MultiplayerGameBoard
 {
     public List<Bubble> Bubbles { get; private set; } = new();
@@ -26,6 +23,8 @@ public class MultiplayerGameBoard
     private readonly Random random;
     public readonly Bubble CeilingBubble;
 
+    private bool nextRowIsStaggered = false;
+
     public const int PowerUpType = -2;
     public const int BombType = -3;
     public const int StarType = -4;
@@ -42,10 +41,10 @@ public class MultiplayerGameBoard
 
         this.allBubbleColorTypes = new[]
         {
-            (Color: 4280221439, Type: 0), // Red
-            (Color: 4280123647, Type: 1), // Green
-            (Color: 4294901760, Type: 2), // Blue
-            (Color: 4280252415, Type: 3)  // Yellow
+            ((uint)0xFF2727F5, 0), // Red
+            ((uint)0xFF22B922, 1), // Green
+            ((uint)0xFFD3B01A, 2), // Blue
+            ((uint)0xFF1AD3D3, 3)  // Yellow
         };
     }
 
@@ -55,7 +54,7 @@ public class MultiplayerGameBoard
         this.ceilingY = BubbleRadius;
         var tempBubbles = new List<Bubble>();
 
-        var numRows = 5;
+        var numRows = 3;
 
         for (var row = 0; row < numRows; row++)
         {
@@ -63,19 +62,17 @@ public class MultiplayerGameBoard
             for (var col = 0; col < bubblesInThisRow; col++)
             {
                 var x = (col * GridSpacing) + BubbleRadius + (row % 2 == 1 ? BubbleRadius : 0);
-                var y = row * (GridSpacing * 0.866f) + this.ceilingY;
+                var y = row * (GridSpacing * (MathF.Sqrt(3) / 2f)) + this.ceilingY;
                 var bubbleType = this.allBubbleColorTypes[this.random.Next(this.allBubbleColorTypes.Length)];
                 tempBubbles.Add(new Bubble(new Vector2(x, y), Vector2.Zero, BubbleRadius, bubbleType.Color, bubbleType.Type));
             }
         }
 
-        this.AbstractHeight = (numRows - 1) * (GridSpacing * 0.866f) + (2 * BubbleRadius);
+        this.nextRowIsStaggered = (numRows % 2) != 0;
+        this.AbstractHeight = (numRows > 0 ? (numRows - 1) * (GridSpacing * (MathF.Sqrt(3) / 2f)) : 0) + (2 * BubbleRadius);
         AddPowerUpsToBubbleList(tempBubbles);
         this.Bubbles = tempBubbles;
     }
-
-    // NOTE: DrawBoardChrome has been removed.
-    // NOTE: IsGameOver has been removed.
 
     private void AddPowerUpsToBubbleList(List<Bubble> bubbleList)
     {
@@ -88,14 +85,14 @@ public class MultiplayerGameBoard
             helperBubble.Color = GetBubbleDetails(PowerUpType).Color;
             candidates.Remove(helperBubble);
         }
-        if (this.random.Next(100) < 10 && candidates.Any())
+        if (this.random.Next(100) < 30 && candidates.Any())
         {
             var bombBubble = candidates[this.random.Next(candidates.Count)];
             bombBubble.BubbleType = BombType;
             bombBubble.Color = GetBubbleDetails(BombType).Color;
             candidates.Remove(bombBubble);
         }
-        if (this.random.Next(100) < 10 && candidates.Any())
+        if (this.random.Next(100) < 20 && candidates.Any())
         {
             var paintBubble = candidates[this.random.Next(candidates.Count)];
             paintBubble.BubbleType = PaintType;
@@ -112,62 +109,155 @@ public class MultiplayerGameBoard
 
     public void AdvanceAndRefillBoard()
     {
-        var rowHeight = GridSpacing * 0.866f;
+        var rowHeight = GridSpacing * (MathF.Sqrt(3) / 2f);
+
         foreach (var bubble in this.Bubbles)
         {
             bubble.Position.Y += rowHeight;
         }
-        this.ceilingY += rowHeight;
         this.AbstractHeight += rowHeight;
 
         var newRow = new List<Bubble>();
-        for (var col = 0; col < this.gameBoardWidthInBubbles; col++)
+        int bubblesInThisRow = this.gameBoardWidthInBubbles - (this.nextRowIsStaggered ? 1 : 0);
+        float xOffset = this.nextRowIsStaggered ? BubbleRadius : 0;
+
+        for (var col = 0; col < bubblesInThisRow; col++)
         {
-            var x = (col * GridSpacing) + BubbleRadius;
-            var y = BubbleRadius; // Top-most row
+            var x = (col * GridSpacing) + BubbleRadius + xOffset;
+            var y = this.ceilingY;
             var bubbleType = this.allBubbleColorTypes[this.random.Next(this.allBubbleColorTypes.Length)];
             newRow.Add(new Bubble(new Vector2(x, y), Vector2.Zero, BubbleRadius, bubbleType.Color, bubbleType.Type));
         }
+
+        this.nextRowIsStaggered = !this.nextRowIsStaggered;
+
         AddPowerUpsToBubbleList(newRow);
         this.Bubbles.AddRange(newRow);
+    }
+
+    public void AddJunkToBottom(int junkBubbleCount)
+    {
+        if (!this.Bubbles.Any() || junkBubbleCount <= 0) return;
+
+        var occupiedSlots = this.Bubbles.Select(b => b.Position).ToHashSet();
+        var attachPoints = new HashSet<Vector2>();
+
+        var lowestY = this.Bubbles.Max(b => b.Position.Y);
+        var bottomBubbles = this.Bubbles.Where(b => b.Position.Y > lowestY - GridSpacing).ToList();
+
+        foreach (var bubble in bottomBubbles)
+        {
+            for (int i = 0; i < 6; i++)
+            {
+                var angle = (MathF.PI / 3f * i) + (MathF.PI / 6f);
+                var neighborPos = bubble.Position + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * GridSpacing;
+
+                if (neighborPos.Y > bubble.Position.Y)
+                {
+                    var snappedAttachPoint = GetClosestTheoreticalSlot(neighborPos);
+                    if (!occupiedSlots.Contains(snappedAttachPoint))
+                    {
+                        attachPoints.Add(snappedAttachPoint);
+                    }
+                }
+            }
+        }
+
+        var validAttachPoints = attachPoints.ToList();
+        if (!validAttachPoints.Any()) return;
+
+        int bubblesRemaining = junkBubbleCount;
+        while (bubblesRemaining > 0 && validAttachPoints.Any())
+        {
+            int clusterSize = random.Next(2, Math.Min(bubblesRemaining, 5) + 1);
+            bubblesRemaining -= clusterSize;
+
+            var startAttachPoint = validAttachPoints[this.random.Next(validAttachPoints.Count)];
+            validAttachPoints.RemoveAll(p => Vector2.Distance(p, startAttachPoint) < GridSpacing * 3);
+
+            var mirrorBubble = new Bubble(startAttachPoint, Vector2.Zero, BubbleRadius, GetBubbleDetails(MirrorType).Color, MirrorType);
+            this.Bubbles.Add(mirrorBubble);
+            occupiedSlots.Add(startAttachPoint);
+
+            for (int i = 1; i < clusterSize; i++)
+            {
+                var parentBubble = this.Bubbles.Last(b => b.BubbleType == MirrorType);
+                var angle = (MathF.PI / 3f) * this.random.Next(6);
+                var newPos = parentBubble.Position + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * GridSpacing;
+
+                var snappedNewPos = GetSnappedPosition(newPos, parentBubble);
+                if (snappedNewPos != parentBubble.Position)
+                {
+                    var newMirrorBubble = new Bubble(snappedNewPos, Vector2.Zero, BubbleRadius, GetBubbleDetails(MirrorType).Color, MirrorType);
+                    this.Bubbles.Add(newMirrorBubble);
+                    occupiedSlots.Add(snappedNewPos);
+                }
+            }
+        }
     }
 
     public Bubble? FindCollision(Bubble activeBubble)
     {
         if (activeBubble.Position.Y - activeBubble.Radius <= this.ceilingY)
             return this.CeilingBubble;
-        return this.Bubbles.FirstOrDefault(bubble => Vector2.Distance(activeBubble.Position, bubble.Position) < GridSpacing);
+
+        var candidates = this.Bubbles.Where(b => Vector2.Distance(activeBubble.Position, b.Position) < GridSpacing);
+        return candidates.OrderBy(b => Vector2.Distance(activeBubble.Position, b.Position)).FirstOrDefault();
     }
 
     public Vector2 GetSnappedPosition(Vector2 landingPosition, Bubble? collidedWith)
     {
-        var nearbyBubbles = this.Bubbles.Where(b => Vector2.Distance(b.Position, landingPosition) < GridSpacing * 1.5f);
-        var closestBubble = collidedWith ?? nearbyBubbles.OrderBy(b => Vector2.Distance(b.Position, landingPosition)).FirstOrDefault();
+        var occupiedSlots = this.Bubbles.Select(b => b.Position).ToHashSet();
+        var stickableSlots = new HashSet<Vector2>();
 
-        if (closestBubble == null || closestBubble == this.CeilingBubble)
+        int topRowBubbleCount = this.gameBoardWidthInBubbles - (nextRowIsStaggered ? 1 : 0);
+        float topRowXOffset = nextRowIsStaggered ? BubbleRadius : 0;
+
+        for (var col = 0; col < topRowBubbleCount; col++)
         {
-            int row = (int)Math.Round((landingPosition.Y - this.ceilingY) / (GridSpacing * 0.866f));
-            var gridX = (float)Math.Round((landingPosition.X - BubbleRadius - (row % 2 == 1 ? BubbleRadius : 0)) / GridSpacing);
-            var x = (gridX * GridSpacing) + BubbleRadius + (row % 2 == 1 ? BubbleRadius : 0);
-            return new Vector2(x, landingPosition.Y);
-        }
-        Vector2 bestPosition = landingPosition;
-        float closestDist = float.MaxValue;
-        for (int i = 0; i < 6; i++)
-        {
-            var angle = MathF.PI / 3f * i;
-            var neighborPos = closestBubble.Position + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * GridSpacing;
-            if (!this.Bubbles.Any(b => Vector2.Distance(b.Position, neighborPos) < GridSpacing * 0.9f))
+            var x = (col * GridSpacing) + BubbleRadius + topRowXOffset;
+            var y = this.ceilingY;
+            var slot = new Vector2(x, y);
+            if (!occupiedSlots.Contains(slot))
             {
-                float dist = Vector2.Distance(landingPosition, neighborPos);
-                if (dist < closestDist)
+                stickableSlots.Add(slot);
+            }
+        }
+
+        foreach (var bubble in this.Bubbles)
+        {
+            for (int i = 0; i < 6; i++)
+            {
+                var angle = MathF.PI / 3f * i;
+                var neighborPos = bubble.Position + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * GridSpacing;
+
+                var snappedNeighborPos = GetClosestTheoreticalSlot(neighborPos);
+
+                if (!occupiedSlots.Contains(snappedNeighborPos))
                 {
-                    closestDist = dist;
-                    bestPosition = neighborPos;
+                    stickableSlots.Add(snappedNeighborPos);
                 }
             }
         }
-        return bestPosition;
+
+        if (!stickableSlots.Any())
+        {
+            return GetClosestTheoreticalSlot(landingPosition);
+        }
+
+        return stickableSlots.OrderBy(slot => Vector2.Distance(landingPosition, slot)).First();
+    }
+
+    private Vector2 GetClosestTheoreticalSlot(Vector2 position)
+    {
+        int row = (int)Math.Round((position.Y - this.ceilingY) / (GridSpacing * (MathF.Sqrt(3) / 2f)));
+        float xOffset = (row % 2 == 1) ? BubbleRadius : 0;
+        var gridX = (float)Math.Round((position.X - xOffset - BubbleRadius) / GridSpacing);
+
+        var x = (gridX * GridSpacing) + BubbleRadius + xOffset;
+        var y = row * (GridSpacing * (MathF.Sqrt(3) / 2f)) + this.ceilingY;
+
+        return new Vector2(x, y);
     }
 
     public ClearResult AddBubble(Bubble bubble, Bubble? collidedWith)
@@ -327,46 +417,6 @@ public class MultiplayerGameBoard
         mirrorBubble.Color = colorSourceBubble.Color;
     }
 
-    public void AddJunkScatterShotToBottom(int attackStrength)
-    {
-        if (!this.Bubbles.Any()) return;
-        var attachPoints = new List<Vector2>();
-        var lowestY = this.Bubbles.Max(b => b.Position.Y);
-        var bottomBubbles = this.Bubbles.Where(b => b.Position.Y > lowestY - GridSpacing).ToList();
-        foreach (var bubble in bottomBubbles)
-        {
-            for (int i = 0; i < 6; i++)
-            {
-                var angle = (MathF.PI / 3f * i) + (MathF.PI / 6f);
-                var neighborPos = bubble.Position + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * GridSpacing;
-                if (neighborPos.Y > bubble.Position.Y)
-                {
-                    if (!this.Bubbles.Any(b => Vector2.Distance(b.Position, neighborPos) < BubbleRadius))
-                        attachPoints.Add(neighborPos);
-                }
-            }
-        }
-        if (!attachPoints.Any()) return;
-        var junkCluster = new List<Bubble>();
-        var startAttachPoint = attachPoints[this.random.Next(attachPoints.Count)];
-        var mirrorBubble = new Bubble(startAttachPoint, Vector2.Zero, BubbleRadius, GetBubbleDetails(MirrorType).Color, MirrorType);
-        junkCluster.Add(mirrorBubble);
-        for (int i = 1; i < attackStrength && junkCluster.Count < 50; i++)
-        {
-            var parentBubble = junkCluster[this.random.Next(junkCluster.Count)];
-            var angle = (MathF.PI / 3f) * this.random.Next(6);
-            var newPos = parentBubble.Position + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * GridSpacing;
-            bool isSpotFree = !junkCluster.Any(b => Vector2.Distance(b.Position, newPos) < BubbleRadius)
-                              && !this.Bubbles.Any(b => Vector2.Distance(b.Position, newPos) < BubbleRadius);
-            if (isSpotFree && newPos.X > 0 && newPos.X < this.AbstractWidth)
-            {
-                var newMirrorBubble = new Bubble(newPos, Vector2.Zero, BubbleRadius, GetBubbleDetails(MirrorType).Color, MirrorType);
-                junkCluster.Add(newMirrorBubble);
-            }
-        }
-        this.Bubbles.AddRange(junkCluster);
-    }
-
     public byte[] SerializeBoardState()
     {
         if (!this.Bubbles.Any()) return Array.Empty<byte>();
@@ -385,16 +435,17 @@ public class MultiplayerGameBoard
     }
 
     public float GetBubbleRadius() => BubbleRadius;
+    public float GetCeilingY() => this.ceilingY;
 
     public (uint Color, int Type) GetBubbleDetails(int bubbleType)
     {
         switch (bubbleType)
         {
-            case PowerUpType: return (4289864447, PowerUpType);
-            case BombType: return (4280153855, BombType);
-            case StarType: return (4280252159, StarType);
-            case PaintType: return (4294934527, PaintType);
-            case MirrorType: return (4294309324, MirrorType);
+            case PowerUpType: return ((uint)0xFFC000C0, PowerUpType);
+            case BombType: return ((uint)0xFF1F75E6, BombType);
+            case StarType: return ((uint)0xFF24C5F5, StarType);
+            case PaintType: return ((uint)0xFF9A5CF5, PaintType);
+            case MirrorType: return ((uint)0xFFCCCCCC, MirrorType);
         }
         foreach (var details in this.allBubbleColorTypes)
         {

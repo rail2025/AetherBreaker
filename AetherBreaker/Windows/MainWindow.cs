@@ -138,18 +138,16 @@ public class MainWindow : Window, IDisposable
         var contentMin = ImGui.GetWindowContentRegionMin();
         var contentMax = ImGui.GetWindowContentRegionMax();
         var drawList = ImGui.GetWindowDrawList();
-        var scale = ImGuiHelpers.GlobalScale;
 
         float availableWidth = contentMax.X - contentMin.X;
         float pixelsPerUnit = availableWidth / session.GameBoard.AbstractWidth;
         var contentOrigin = windowPos + contentMin;
 
-        // CHANGE: Calculate the HUD's Y position based on the Game Over line's scaled position.
         var abstractGameOverLineY = session.GetAbstractGameOverLineY();
         var scaledGameOverLineY = contentOrigin.Y + abstractGameOverLineY * pixelsPerUnit;
         var hudAreaPos = new Vector2(contentOrigin.X, scaledGameOverLineY);
 
-        this.launcherPosition = new Vector2(contentOrigin.X + availableWidth * 0.5f, hudAreaPos.Y + (HudAreaHeight * scale / 2));
+        this.launcherPosition = new Vector2(contentOrigin.X + availableWidth * 0.5f, hudAreaPos.Y + (HudAreaHeight * ImGuiHelpers.GlobalScale / 2));
 
         DrawBoardChrome(drawList, contentOrigin, pixelsPerUnit, session);
 
@@ -159,6 +157,7 @@ public class MainWindow : Window, IDisposable
         UpdateAndDrawBubbleAnimations(drawList, contentOrigin, session.ActiveBubbleAnimations, pixelsPerUnit);
         UpdateAndDrawTextAnimations(drawList, contentOrigin, session.ActiveTextAnimations, pixelsPerUnit);
         UIManager.DrawGameUI(drawList, hudAreaPos, session, this.plugin, this.audioManager, this.textureManager, availableWidth);
+        DrawDebugInfo(drawList, pixelsPerUnit, session);
     }
 
     private void DrawInGame(MultiplayerGameSession session)
@@ -168,18 +167,16 @@ public class MainWindow : Window, IDisposable
         var contentMin = ImGui.GetWindowContentRegionMin();
         var contentMax = ImGui.GetWindowContentRegionMax();
         var drawList = ImGui.GetWindowDrawList();
-        var scale = ImGuiHelpers.GlobalScale;
 
         float availableWidth = contentMax.X - contentMin.X;
         float pixelsPerUnit = availableWidth / session.GameBoard.AbstractWidth;
         var contentOrigin = windowPos + contentMin;
 
-        // CHANGE: Calculate the HUD's Y position based on the Game Over line's scaled position.
         var abstractGameOverLineY = session.GetAbstractGameOverLineY();
         var scaledGameOverLineY = contentOrigin.Y + abstractGameOverLineY * pixelsPerUnit;
         var hudAreaPos = new Vector2(contentOrigin.X, scaledGameOverLineY);
 
-        this.launcherPosition = new Vector2(contentOrigin.X + availableWidth * 0.5f, hudAreaPos.Y + (HudAreaHeight * scale / 2));
+        this.launcherPosition = new Vector2(contentOrigin.X + availableWidth * 0.5f, hudAreaPos.Y + (HudAreaHeight * ImGuiHelpers.GlobalScale / 2));
 
         DrawBoardChrome(drawList, contentOrigin, pixelsPerUnit, session);
 
@@ -189,6 +186,7 @@ public class MainWindow : Window, IDisposable
         UpdateAndDrawBubbleAnimations(drawList, contentOrigin, session.ActiveBubbleAnimations, pixelsPerUnit);
         UpdateAndDrawTextAnimations(drawList, contentOrigin, session.ActiveTextAnimations, pixelsPerUnit);
         UIManager.DrawMultiplayerGameUI(drawList, hudAreaPos, session, this.plugin, this.audioManager, this.textureManager, availableWidth);
+        //DrawDebugInfo(drawList, pixelsPerUnit, session);
     }
 
     private void DrawPausedScreen(GameSession session)
@@ -219,20 +217,32 @@ public class MainWindow : Window, IDisposable
     private void DrawBoardChrome(ImDrawListPtr drawList, Vector2 contentOrigin, float pixelsPerUnit, GameSession session)
     {
         if (session.GameBoard == null) return;
+
+        // Draw Ceiling Line
+        var abstractCeilingY = session.GameBoard.GetCeilingY();
+        var scaledCeilingY = contentOrigin.Y + abstractCeilingY * pixelsPerUnit - (session.GameBoard.GetBubbleRadius() * pixelsPerUnit);
+        var scaledContentWidth = session.GameBoard.AbstractWidth * pixelsPerUnit;
+        drawList.AddLine(new Vector2(contentOrigin.X, scaledCeilingY), new Vector2(contentOrigin.X + scaledContentWidth, scaledCeilingY), (uint)0x80FFFFFF, 1f * ImGuiHelpers.GlobalScale);
+
+        // Draw Game Over Line
         var abstractGameOverLineY = session.GetAbstractGameOverLineY();
         var scaledGameOverLineY = contentOrigin.Y + abstractGameOverLineY * pixelsPerUnit;
-        var scaledContentWidth = session.GameBoard.AbstractWidth * pixelsPerUnit;
-
         drawList.AddLine(new Vector2(contentOrigin.X, scaledGameOverLineY), new Vector2(contentOrigin.X + scaledContentWidth, scaledGameOverLineY), (uint)0x800000FF, 2f * ImGuiHelpers.GlobalScale);
     }
 
     private void DrawBoardChrome(ImDrawListPtr drawList, Vector2 contentOrigin, float pixelsPerUnit, MultiplayerGameSession session)
     {
         if (session.GameBoard == null) return;
+
+        // Draw Ceiling Line
+        var abstractCeilingY = session.GameBoard.GetCeilingY();
+        var scaledCeilingY = contentOrigin.Y + abstractCeilingY * pixelsPerUnit - (session.GameBoard.GetBubbleRadius() * pixelsPerUnit);
+        var scaledContentWidth = session.GameBoard.AbstractWidth * pixelsPerUnit;
+        drawList.AddLine(new Vector2(contentOrigin.X, scaledCeilingY), new Vector2(contentOrigin.X + scaledContentWidth, scaledCeilingY), (uint)0x80FFFFFF, 1f * ImGuiHelpers.GlobalScale);
+
+        // Draw Game Over Line
         var abstractGameOverLineY = session.GetAbstractGameOverLineY();
         var scaledGameOverLineY = contentOrigin.Y + abstractGameOverLineY * pixelsPerUnit;
-        var scaledContentWidth = session.GameBoard.AbstractWidth * pixelsPerUnit;
-
         drawList.AddLine(new Vector2(contentOrigin.X, scaledGameOverLineY), new Vector2(contentOrigin.X + scaledContentWidth, scaledGameOverLineY), (uint)0x800000FF, 2f * ImGuiHelpers.GlobalScale);
     }
 
@@ -337,9 +347,10 @@ public class MainWindow : Window, IDisposable
         var pathPoints = PredictHelperLinePath(gameBoard, abstractStartPos, abstractVelocity, abstractBubbleRadius);
         uint color = (uint)0x4DFFFFFF;
         var scale = ImGuiHelpers.GlobalScale;
+        // CHANGE: Increased thickness of aiming line.
         for (int i = 0; i < pathPoints.Count - 1; i++)
         {
-            drawList.AddLine(contentOrigin + pathPoints[i] * pixelsPerUnit, contentOrigin + pathPoints[i + 1] * pixelsPerUnit, color, 2f * scale);
+            drawList.AddLine(contentOrigin + pathPoints[i] * pixelsPerUnit, contentOrigin + pathPoints[i + 1] * pixelsPerUnit, color, 3f * scale);
         }
         var lastPoint = pathPoints.LastOrDefault();
         var snappedPosition = gameBoard.GetSnappedPosition(lastPoint, null);
@@ -355,9 +366,10 @@ public class MainWindow : Window, IDisposable
         var pathPoints = PredictHelperLinePath(gameBoard, abstractStartPos, abstractVelocity, abstractBubbleRadius);
         uint color = (uint)0x4DFFFFFF;
         var scale = ImGuiHelpers.GlobalScale;
+        // CHANGE: Increased thickness of aiming line.
         for (int i = 0; i < pathPoints.Count - 1; i++)
         {
-            drawList.AddLine(contentOrigin + pathPoints[i] * pixelsPerUnit, contentOrigin + pathPoints[i + 1] * pixelsPerUnit, color, 2f * scale);
+            drawList.AddLine(contentOrigin + pathPoints[i] * pixelsPerUnit, contentOrigin + pathPoints[i + 1] * pixelsPerUnit, color, 3f * scale);
         }
         var lastPoint = pathPoints.LastOrDefault();
         var snappedPosition = gameBoard.GetSnappedPosition(lastPoint, null);
@@ -460,4 +472,46 @@ public class MainWindow : Window, IDisposable
             else { animations.RemoveAt(i); }
         }
     }
+
+    private void DrawDebugInfo(ImDrawListPtr drawList, float pixelsPerUnit, GameSession session)
+    {
+        if (session.GameBoard == null) return;
+        var scale = ImGuiHelpers.GlobalScale;
+        ImGui.SetCursorPos(new Vector2(ImGui.GetWindowContentRegionMax().X - 220 * scale, 10 * scale));
+
+        var firstBubble = session.GameBoard.Bubbles.FirstOrDefault();
+
+        ImGui.BeginGroup();
+        ImGui.Text($"--- DEBUG INFO ---");
+        ImGui.Text($"Global Scale: {scale:F2}");
+        ImGui.Text($"Pixels Per Unit: {pixelsPerUnit:F2}");
+        ImGui.Text($"Board Abstract W: {session.GameBoard.AbstractWidth:F2}");
+        if (firstBubble != null)
+        {
+            ImGui.Text($"First Bubble Abstract: {firstBubble.Position.X:F1}, {firstBubble.Position.Y:F1}");
+            ImGui.Text($"First Bubble Scaled: {(int)(firstBubble.Position.X * pixelsPerUnit)}, {(int)(firstBubble.Position.Y * pixelsPerUnit)}");
+        }
+        ImGui.EndGroup();
+    }
+
+    //private void DrawDebugInfo(ImDrawListPtr drawList, float pixelsPerUnit, MultiplayerGameSession session)
+    //{
+       // if (session.GameBoard == null) return;
+        //var scale = ImGuiHelpers.GlobalScale;
+        //ImGui.SetCursorPos(new Vector2(ImGui.GetWindowContentRegionMax().X - 220 * scale, 10 * scale));
+
+        //var firstBubble = session.GameBoard.Bubbles.FirstOrDefault();
+
+        //ImGui.BeginGroup();
+        //ImGui.Text($"--- DEBUG INFO ---");
+        //ImGui.Text($"Global Scale: {scale:F2}");
+        //ImGui.Text($"Pixels Per Unit: {pixelsPerUnit:F2}");
+        //ImGui.Text($"Board Abstract W: {session.GameBoard.AbstractWidth:F2}");
+        //if (firstBubble != null)
+        //{
+            //ImGui.Text($"First Bubble Abstract: {firstBubble.Position.X:F1}, {firstBubble.Position.Y:F1}");
+          //  ImGui.Text($"First Bubble Scaled: {(int)(firstBubble.Position.X * pixelsPerUnit)}, {(int)(firstBubble.Position.Y * pixelsPerUnit)}");
+        //}
+        //ImGui.EndGroup();
+    //}
 }

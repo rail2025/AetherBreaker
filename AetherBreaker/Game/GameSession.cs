@@ -103,6 +103,11 @@ public class GameSession
     {
         this.IsHelperLineActiveForStage = false;
 
+        if (this.CurrentStage <= 2)
+        {
+            this.IsHelperLineActiveForStage = true;
+        }
+
         this.GameBoard = new GameBoard(this.CurrentStage);
         this.GameBoard.InitializeBoard(this.CurrentStage);
 
@@ -314,7 +319,7 @@ public class GameSession
             this.IsHelperLineActiveForStage = true;
             var powerUpBubble = clearResult.PoppedBubbles.FirstOrDefault(b => b.BubbleType == GameBoard.PowerUpType);
             var textPos = powerUpBubble?.Position ?? new Vector2(this.GameBoard.AbstractWidth / 2f, this.GameBoard.AbstractHeight / 2f);
-            this.ActiveTextAnimations.Add(new TextAnimation("Aiming Helper!", textPos, 4289864447, 2.5f, TextAnimationType.FadeOut, 1.8f));
+            this.ActiveTextAnimations.Add(new TextAnimation("Aiming Helper!", textPos, (uint)0xFFC000C0, 2.5f, TextAnimationType.FadeOut, 1.8f));
         }
 
         if (clearResult.PoppedBubbles.Any())
@@ -330,15 +335,15 @@ public class GameSession
         {
             this.ActiveBubbleAnimations.Add(new BubbleAnimation(clearResult.DroppedBubbles, BubbleAnimationType.Drop, 1.5f));
             this.audioManager.PlaySfx("drop.wav");
-            foreach (var b in clearResult.DroppedBubbles) this.ActiveTextAnimations.Add(new TextAnimation("+20", b.Position, 4280252415, 0.7f, TextAnimationType.FloatAndFade));
+            foreach (var b in clearResult.DroppedBubbles) this.ActiveTextAnimations.Add(new TextAnimation("+20", b.Position, (uint)0xFF1AD3D3, 0.7f, TextAnimationType.FloatAndFade));
         }
-        foreach (var b in clearResult.PoppedBubbles) this.ActiveTextAnimations.Add(new TextAnimation("+10", b.Position, 4294967295, 0.7f, TextAnimationType.FloatAndFade));
+        foreach (var b in clearResult.PoppedBubbles) this.ActiveTextAnimations.Add(new TextAnimation("+10", b.Position, (uint)0xFFFFFFFF, 0.7f, TextAnimationType.FloatAndFade));
 
         if (clearResult.ComboMultiplier > 1)
         {
             var droppedPositions = clearResult.DroppedBubbles.Select(b => b.Position).ToList();
             var bonusPosition = droppedPositions.Aggregate(Vector2.Zero, (acc, p) => acc + p) / droppedPositions.Count;
-            this.ActiveTextAnimations.Add(new TextAnimation($"x{clearResult.ComboMultiplier} COMBO!", bonusPosition, 4280193279, 2.5f, TextAnimationType.FadeOut, 1.8f));
+            this.ActiveTextAnimations.Add(new TextAnimation($"x{clearResult.ComboMultiplier} COMBO!", bonusPosition, (uint)0xFF00A5FF, 2.5f, TextAnimationType.FadeOut, 1.8f));
         }
 
         if (this.GameBoard.AreAllColoredBubblesCleared())
@@ -404,8 +409,31 @@ public class GameSession
             return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, details.Color, details.Type);
         }
 
-        var bubbleTypes = this.GameBoard.GetAvailableBubbleTypesOnBoard();
-        var selectedType = bubbleTypes[this.random.Next(bubbleTypes.Length)];
+        var colorsOnBoard = this.GameBoard.GetAvailableBubbleTypesOnBoard();
+        var allPossibleColors = this.GameBoard.GetAllBubbleColorTypes();
+
+        List<(uint Color, int Type)> allowedColorList = new();
+        switch (this.CurrentStage)
+        {
+            case 1:
+                allowedColorList.AddRange(allPossibleColors.Take(2));
+                break;
+            case 2:
+                allowedColorList.AddRange(allPossibleColors.Take(3));
+                break;
+            default:
+                allowedColorList.AddRange(allPossibleColors);
+                break;
+        }
+
+        var finalColorSelection = colorsOnBoard.Where(onBoard => allowedColorList.Any(allowed => allowed.Type == onBoard.Type)).ToArray();
+
+        if (finalColorSelection.Length == 0)
+        {
+            finalColorSelection = colorsOnBoard.Any() ? colorsOnBoard : allowedColorList.ToArray();
+        }
+
+        var selectedType = finalColorSelection[this.random.Next(finalColorSelection.Length)];
         return new Bubble(Vector2.Zero, Vector2.Zero, this.currentBubbleRadius, selectedType.Color, selectedType.Type);
     }
 
@@ -457,5 +485,12 @@ public class GameSession
     {
         this.configuration.SavedGame = null;
         this.configuration.Save();
+    }
+
+    public void Debug_ClearStage()
+    {
+        if (this.CurrentGameState != GameState.InGame) return;
+        this.Score += 1000 * this.CurrentStage;
+        this.CurrentGameState = GameState.StageCleared;
     }
 }

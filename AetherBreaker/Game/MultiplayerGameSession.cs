@@ -45,6 +45,8 @@ namespace AetherBreaker.Game
         private readonly List<Bubble> bubbleQueue = new();
         private Random bubbleRandom = new();
 
+        private readonly Queue<int> incomingJunkQueue = new();
+
         public MultiplayerGameSession(NetworkManager networkManager, AudioManager audioManager)
         {
             this.networkManager = networkManager;
@@ -181,6 +183,12 @@ namespace AetherBreaker.Game
                 this.OpponentScore++;
                 this.CurrentGameState = GameState.GameOver;
             }
+
+            if (this.incomingJunkQueue.Count > 0)
+            {
+                int junkToProcess = this.incomingJunkQueue.Dequeue();
+                this.GameBoard?.AddJunkToBottom(junkToProcess);
+            }
         }
 
         private void UpdateActiveBubble(float deltaTime)
@@ -278,7 +286,11 @@ namespace AetherBreaker.Game
                 this.attackCharge += totalPopped;
                 if (this.attackCharge >= 6)
                 {
-                    _ = this.networkManager.SendAttackData(this.attackCharge);
+                    int junkToSend = (int)(this.attackCharge * 0.75f);
+                    if (junkToSend > 0)
+                    {
+                        _ = this.networkManager.SendAttackData(junkToSend);
+                    }
                     this.attackCharge = 0;
                 }
             }
@@ -319,7 +331,7 @@ namespace AetherBreaker.Game
 
         private void HandleAttackReceived(int junkAmount)
         {
-            this.GameBoard?.AddJunkScatterShotToBottom(junkAmount);
+            this.incomingJunkQueue.Enqueue(junkAmount);
         }
 
         public void ReceiveOpponentBoardState(byte[] state)

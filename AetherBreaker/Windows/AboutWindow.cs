@@ -4,6 +4,7 @@ using System.Reflection;
 using Dalamud.Interface.Windowing;
 using Dalamud.Utility;
 using ImGuiNET;
+using Dalamud.Interface.Utility.Raii;
 
 namespace AetherBreaker.Windows;
 
@@ -17,7 +18,8 @@ public class AboutWindow : Window, IDisposable
     /// </summary>
     public AboutWindow() : base("About AetherBreaker")
     {
-        this.Size = new Vector2(300, 200);
+        // CHANGE: Increased window width to prevent text wrapping.
+        this.Size = new Vector2(380, 250);
         this.SizeCondition = ImGuiCond.FirstUseEver;
         this.Flags |= ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
     }
@@ -32,10 +34,9 @@ public class AboutWindow : Window, IDisposable
     /// </summary>
     public override void Draw()
     {
-        // Get and display the plugin's assembly version.
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
         ImGui.Text($"Version: {version}");
-        ImGui.Text("Release Date: 6/16/2025"); // As requested 
+        ImGui.Text("Release Date: 6/16/2025");
         ImGui.Separator();
 
         ImGui.Text("Created by: rail");
@@ -46,23 +47,46 @@ public class AboutWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.Spacing();
 
-        // Support Button, using the provided template 
+        float btnWidthFull = ImGui.GetContentRegionAvail().X;
+
+        // --- GitHub Issues Button ---
+        float bugReportButtonHeight = ImGui.CalcTextSize("Bug report/\nFeature request").Y + ImGui.GetStyle().FramePadding.Y * 2.0f;
+
+        using (ImRaii.PushColor(ImGuiCol.Button, new Vector4(0.1f, 0.4f, 0.1f, 1.0f)))
+        using (ImRaii.PushColor(ImGuiCol.ButtonHovered, new Vector4(0.1f, 0.5f, 0.1f, 1.0f)))
+        using (ImRaii.PushColor(ImGuiCol.ButtonActive, new Vector4(0.2f, 0.6f, 0.2f, 1.0f)))
+        {
+            
+            if (ImGui.Button("Bug report/\nFeature request", new Vector2(btnWidthFull, bugReportButtonHeight)))
+            {
+                Util.OpenLink("https://github.com/rail2025/AetherBreaker/issues");
+            }
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Opens the GitHub Issues page in your browser.");
+        }
+
+        ImGui.Spacing();
+
+        // --- Support Button ---
         string buttonText = "Donate & Support";
-       
-        var buttonColor = new Vector4(0.9f, 0.2f, 0.2f, 1.0f); // A reddish color
+
+        var buttonColor = new Vector4(0.9f, 0.2f, 0.2f, 1.0f);
 
         ImGui.PushStyleColor(ImGuiCol.Button, buttonColor);
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, buttonColor * 1.2f);
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, buttonColor * 0.8f);
 
-        // Center the button
-        float buttonWidth = ImGui.CalcTextSize(buttonText).X + ImGui.GetStyle().FramePadding.X * 2.0f;
-        float windowWidth = ImGui.GetWindowSize().X;
-        ImGui.SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
-
-        if (ImGui.Button(buttonText, new Vector2(buttonWidth, 0)))
+        
+        if (ImGui.Button(buttonText, new Vector2(btnWidthFull, 0)))
         {
             Util.OpenLink("https://ko-fi.com/rail2025");
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Buy me a coffee!");
         }
 
         ImGui.PopStyleColor(3);
