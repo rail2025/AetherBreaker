@@ -326,7 +326,7 @@ public class GameSession
             {
                 this.audioManager.PlaySfx("chest.wav");
                 this.audioManager.UnlockBonusTrack(trackNumber);
-                var text = $"Bonus Music track #{trackNumber} discovered!";
+                var text = $"Bonus track #{trackNumber} of 5 discovered!";
                 this.ActiveTextAnimations.Add(new TextAnimation(text, chest.Position, 0xFF00D4FF, 3.0f, TextAnimationType.FadeOut, 1.8f));
             }
         }
