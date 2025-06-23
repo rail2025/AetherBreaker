@@ -18,7 +18,7 @@
     <EmbeddedResource Include="Music\bgm4GQ.mp3" />
     <EmbeddedResource Include="Images\icon.png" />
     <EmbeddedResource Include="Images\bomb.png" />
-    <EmbeddedResource Include="Images\chocobo.png" />
+    <EmbeddedResource Include="Images\bird.png" />
     <EmbeddedResource Include="Images\dps.png" />
     <EmbeddedResource Include="Images\healer.png" />
     <EmbeddedResource Include="Images\tank.png" />

@@ -34,7 +34,7 @@ public class TextureManager : IDisposable
         // Defines the set of bubble textures to be loaded.
         // New textures like "star", "paint", "chest", and "mirror" are added to this list
         // to ensure they are loaded at startup.
-        var bubbleNames = new[] { "dps", "healer", "tank", "chocobo", "bomb", "star", "paint", "chest", "mirror" };
+        var bubbleNames = new[] { "dps", "healer", "tank", "bird", "bomb", "star", "paint", "chest", "mirror" };
         foreach (var name in bubbleNames)
         {
             var texture = LoadTextureFromResource($"AetherBreaker.Images.{name}.png");
@@ -111,7 +111,7 @@ public class TextureManager : IDisposable
             0 => this.bubbleTextures.GetValueOrDefault("dps"),
             1 => this.bubbleTextures.GetValueOrDefault("healer"),
             2 => this.bubbleTextures.GetValueOrDefault("tank"),
-            3 => this.bubbleTextures.GetValueOrDefault("chocobo"),
+            3 => this.bubbleTextures.GetValueOrDefault("bird"),
 
             // Special bubbles
             -3 => this.bubbleTextures.GetValueOrDefault("bomb"),
