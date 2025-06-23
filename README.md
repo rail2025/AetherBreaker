@@ -7,14 +7,16 @@ Shoot aether when dead.
 
 Because waiting for res in field ops sucks.
 <br>
-![main menu](https://github.com/user-attachments/assets/1b23f707-b464-4b82-bc25-006dbb4a2eae)
+![main menu aetherbreaker v2 1](https://github.com/user-attachments/assets/e94ab789-dd80-405b-ac94-9a0f7adca3eb)
+
 
 <br>
 
 ![game board 1](https://github.com/user-attachments/assets/4b8c20a1-43f7-4d02-b7cc-d33675ad4de6)
 
 <br>
-![13](https://github.com/user-attachments/assets/bf3612d0-17fe-4165-9d15-84b44f7e9100)
+![13](https://github.com/user-attachments/assets/37804fcf-17c0-4d95-ae8d-00c56da052ef)
+
 
 <br>![20](https://github.com/user-attachments/assets/38c44152-f121-4407-89ee-7294ed7968a0)
 <br>
