@@ -3,7 +3,7 @@ using System.Numerics;
 using System.Reflection;
 using Dalamud.Interface.Windowing;
 using Dalamud.Utility;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 
 namespace AetherBreaker.Windows;

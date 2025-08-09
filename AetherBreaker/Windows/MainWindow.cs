@@ -8,7 +8,7 @@ using AetherBreaker.UI;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 
 namespace AetherBreaker.Windows;
 
@@ -255,7 +255,7 @@ public class MainWindow : Window, IDisposable
         {
             var p_min = finalPos - new Vector2(finalRadius, finalRadius);
             var p_max = finalPos + new Vector2(finalRadius, finalRadius);
-            drawList.AddImageRounded(bubbleTexture.ImGuiHandle, p_min, p_max, Vector2.Zero, Vector2.One, (uint)0xFFFFFFFF, finalRadius);
+            drawList.AddImageRounded(bubbleTexture.Handle, p_min, p_max, Vector2.Zero, Vector2.One, (uint)0xFFFFFFFF, finalRadius);
         }
         else { drawList.AddCircleFilled(finalPos, finalRadius, bubble.Color); }
 
@@ -446,7 +446,7 @@ public class MainWindow : Window, IDisposable
         var textureToDraw = this.textureManager.GetBackground(bgIndex);
         if (textureToDraw == null) return;
         ImGui.SetCursorPos(Vector2.Zero);
-        ImGui.Image(textureToDraw.ImGuiHandle, ImGui.GetContentRegionAvail());
+        ImGui.Image(textureToDraw.Handle, ImGui.GetContentRegionAvail());
     }
 
     private void UpdateAndDrawBubbleAnimations(ImDrawListPtr drawList, Vector2 contentOrigin, List<BubbleAnimation> animations, float pixelsPerUnit)

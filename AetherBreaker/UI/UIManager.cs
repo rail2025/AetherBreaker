@@ -6,8 +6,7 @@ using AetherBreaker.Game;
 using AetherBreaker.Windows;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
-using ImGuiNET;
-
+using Dalamud.Bindings.ImGui;
 namespace AetherBreaker.UI;
 
 public static class UIManager
@@ -225,7 +224,7 @@ public static class UIManager
                         var pMin = new Vector2(iconX - (iconSize.X / 2), iconY - (iconSize.Y / 2));
                         var pMax = new Vector2(iconX + (iconSize.X / 2), iconY + (iconSize.Y / 2));
 
-                        drawList.AddImage(texture.ImGuiHandle, pMin, pMax);
+                        drawList.AddImage(texture.Handle, pMin, pMax);
                     }
                 }
             }
