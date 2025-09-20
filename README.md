@@ -25,7 +25,7 @@ Because waiting for res in field ops sucks.
 
 ## Installation
 
-https://raw.githubusercontent.com/rail2025/AetherBreaker/refs/heads/master/repo.json
+[https://raw.githubusercontent.com/rail2025/AetherBreaker/refs/heads/master/repo.json](https://raw.githubusercontent.com/rail2025/AetherBreaker/refs/heads/master/AetherBreaker/repo.json)
 ## How To Use
 /abreaker, click to fire. slider to music volume, or mute. settings to turn off sfx. closing window ends game and progress. do people want a continue option?
 ### Die
