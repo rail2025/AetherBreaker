@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/13.0.0">
   <PropertyGroup>
-    <Version>2.1.0.2</Version>
+    <Version>2.1.0.3</Version>
     <TargetFramework>net9.0</TargetFramework>
     <Description>A game to play when dead. Open with /abreaker.</Description>
     <PackageProjectUrl>https://github.com/goatcorp/SamplePlugin</PackageProjectUrl>

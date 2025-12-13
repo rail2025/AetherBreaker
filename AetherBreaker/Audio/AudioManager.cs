@@ -14,6 +14,7 @@ public class AudioManager : IDisposable
     private readonly Configuration configuration;
     private WaveOutEvent? bgmOutputDevice;
     private Mp3FileReader? bgmFileReader;
+    private VolumeSampleProvider? bgmVolumeProvider; //  plugin audio controller instead of ffxiv 
 
     private readonly List<string> allMusicTracks = new();
     private readonly List<string> bgmPlaylist = new();
@@ -78,9 +79,9 @@ public class AudioManager : IDisposable
 
     public void SetMusicVolume(float volume)
     {
-        if (this.bgmOutputDevice != null)
+        if (this.bgmVolumeProvider != null)
         {
-            this.bgmOutputDevice.Volume = Math.Clamp(volume, 0f, 1f);
+            this.bgmVolumeProvider.Volume = Math.Clamp(volume, 0f, 1f);
         }
     }
 
@@ -169,10 +170,17 @@ public class AudioManager : IDisposable
             stream.CopyTo(memoryStream);
             memoryStream.Position = 0;
             this.bgmFileReader = new Mp3FileReader(memoryStream);
+
+            // control plugin audio instead of ffxiv volume
+            this.bgmVolumeProvider = new VolumeSampleProvider(this.bgmFileReader.ToSampleProvider())
+            {
+                Volume = this.configuration.MusicVolume
+            };
+
             this.bgmOutputDevice = new WaveOutEvent();
             this.bgmOutputDevice.PlaybackStopped += OnBgmPlaybackStopped;
-            this.bgmOutputDevice.Init(this.bgmFileReader);
-            this.bgmOutputDevice.Volume = this.configuration.MusicVolume;
+            this.bgmOutputDevice.Init(this.bgmVolumeProvider);
+            //this.bgmOutputDevice.Volume = this.configuration.MusicVolume;  // this would control ffxiv volume instead of plugin
             this.bgmOutputDevice.Play();
         }
         catch (Exception ex)
@@ -201,7 +209,8 @@ public class AudioManager : IDisposable
         }
         else
         {
-            if (this.bgmOutputDevice != null) this.bgmOutputDevice.Volume = this.configuration.MusicVolume;
+            if (this.bgmVolumeProvider != null)
+                this.bgmVolumeProvider.Volume = this.configuration.MusicVolume;
 
             if (this.bgmOutputDevice?.PlaybackState == PlaybackState.Paused)
                 this.bgmOutputDevice.Play();
@@ -221,6 +230,7 @@ public class AudioManager : IDisposable
         }
         this.bgmFileReader?.Dispose();
         this.bgmFileReader = null;
+        this.bgmVolumeProvider = null;
     }
 
     public void EndPlaylist()
